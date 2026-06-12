@@ -61,6 +61,8 @@ import io.github.dsheirer.module.decode.fleetsync2.FleetsyncMessageFilter;
 import io.github.dsheirer.module.decode.lj1200.LJ1200Decoder;
 import io.github.dsheirer.module.decode.lj1200.LJ1200DecoderState;
 import io.github.dsheirer.module.decode.lj1200.LJ1200MessageFilter;
+import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
+import io.github.dsheirer.module.decode.edacs.EDACSDecoderState;
 import io.github.dsheirer.module.decode.ltrnet.DecodeConfigLTRNet;
 import io.github.dsheirer.module.decode.ltrnet.LTRNetDecoder;
 import io.github.dsheirer.module.decode.ltrnet.LTRNetDecoderState;
@@ -192,6 +194,9 @@ public class DecoderFactory
                 break;
             case P25_PHASE2:
                 processP25Phase2(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
+                break;
+            case EDACS:
+                processEDACS(channel, modules, aliasList, decodeConfig);
                 break;
             default:
                 throw new IllegalArgumentException("Unknown decoder type [" + decodeConfig.getDecoderType().toString() + "]");
@@ -463,6 +468,22 @@ public class DecoderFactory
     }
 
     /**
+     * Creates decoder modules for EDACS decoder
+     * @param channel configuration
+     * @param modules collection to add to
+     * @param aliasList for the channel
+     * @param decodeConfig for the channel
+     */
+    private static void processEDACS(Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
+        modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
+        modules.add(new EDACSDecoderState());
+        if(channel.getSourceConfiguration().getSourceType() == SourceType.TUNER)
+        {
+            modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH));
+        }
+    }
+
+    /**
      * Creates modules for DMR decoder setup.
      *
      * Note: on some DMR systems (e.g. Capacity+) we convert standard channels to traffic channels (when rest channel
@@ -714,6 +735,8 @@ public class DecoderFactory
                 return new DecodeConfigP25Phase1();
             case P25_PHASE2:
                 return new DecodeConfigP25Phase2();
+            case EDACS:
+                return new DecodeConfigEDACS();
             default:
                 throw new IllegalArgumentException("DecodeConfigFactory - unknown decoder type [" + decoder + "]");
         }
@@ -785,6 +808,11 @@ public class DecoderFactory
                     return copyP25P2;
                 case PASSPORT:
                     return new DecodeConfigPassport();
+                case EDACS:
+                    DecodeConfigEDACS originalEDACS = (DecodeConfigEDACS)config;
+                    DecodeConfigEDACS copyEDACS = new DecodeConfigEDACS();
+                    copyEDACS.setChannelMapName(originalEDACS.getChannelMapName());
+                    return copyEDACS;
                 default:
                     throw new IllegalArgumentException("Unrecognized decoder configuration type:" + config.getDecoderType());
             }
