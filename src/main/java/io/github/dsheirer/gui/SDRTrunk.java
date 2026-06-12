@@ -145,7 +145,7 @@ public class SDRTrunk implements Listener<TunerEvent>
 
     public SDRTrunk()
     {
-        if(!checkSingleInstance())
+        if(Boolean.getBoolean("sdrtrunk.dev") && !checkSingleInstance())
         {
             return;
         }
