@@ -1,6 +1,8 @@
 package io.github.dsheirer.dsp.fsk;
 
 import io.github.dsheirer.dsp.fm.ScalarFMDemodulator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * GFSK 9600 bps decoder for EDACS control channel.
@@ -10,6 +12,8 @@ import io.github.dsheirer.dsp.fm.ScalarFMDemodulator;
  */
 public class GFSK9600Decoder
 {
+    private final static Logger mLog = LoggerFactory.getLogger(GFSK9600Decoder.class);
+
     private ScalarFMDemodulator mDemodulator = new ScalarFMDemodulator();
     private double mSamplesPerSymbol;
     private int mSymbolSamples;
@@ -27,6 +31,7 @@ public class GFSK9600Decoder
         mSymbolSamples = 0;
         mAccumulator = 0;
         mSampleCount = 0;
+        mLog.info("GFSK9600Decoder: sampleRate=" + sampleRate + " samplesPerSymbol=" + mSamplesPerSymbol);
     }
 
     /**
@@ -51,6 +56,10 @@ public class GFSK9600Decoder
                 bitsExtracted++;
             }
         }
+
+        //Reset per-buffer state so next buffer starts fresh
+        mSampleCount = 0;
+        mAccumulator = 0;
 
         return bitsExtracted;
     }

@@ -103,6 +103,11 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         float[] demodulated = mFMDemodulator.demodulate(filteredI, filteredQ);
 
         mGFSKDecoder.process(demodulated, bit -> mBurstDetector.receive(bit));
+
+        if(mBurstDetector.mBurstsDecoded > 0)
+        {
+            mLog.info("BURSTS DECODED: " + mBurstDetector.mBurstsDecoded);
+        }
     }
 
     private void setSampleRate(double sampleRate)
@@ -160,6 +165,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         private int mConsecutiveAlts = 0;
         private boolean mLastBit;
         private boolean mBurstArmed;
+        int mBurstsDecoded = 0;
 
         public void receive(boolean bit)
         {
@@ -187,8 +193,10 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
             if(mBurstArmed && mConsecutiveAlts < 2)
             {
                 //End of burst — extract the data portion
-                mBurstArmed = false;
-                decodeBurst();
+            mBurstsDecoded++;
+            mBurstArmed = false;
+            mLog.info("BURST DETECTED! Processing...");
+            decodeBurst();
             }
         }
 
@@ -226,6 +234,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
                 CorrectedBinaryMessage msgA = mVoter.vote(mBurstWords[0], mBurstWords[1], mBurstWords[2]);
                 if(msgA != null)
                 {
+                    mLog.info("EDACS MSG A decoded: BCH pass, bits=" + msgA.currentSize());
                     EDACSMessage message = new EDACSMessage(EDACSMessageType.UNKNOWN, msgA, System.currentTimeMillis());
                     getMessageListener().receive(message);
                 }
