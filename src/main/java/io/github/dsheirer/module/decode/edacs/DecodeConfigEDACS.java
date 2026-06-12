@@ -93,6 +93,6 @@ public class DecodeConfigEDACS extends DecodeConfiguration
     @Override
     public ChannelSpecification getChannelSpecification()
     {
-        return new ChannelSpecification(25000.0, 12500, 6000.0, 7000.0);
+        return new ChannelSpecification(50000.0, 25000, 6000.0, 7000.0);
     }
 }
