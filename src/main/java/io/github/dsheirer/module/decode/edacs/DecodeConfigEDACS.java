@@ -1,21 +1,3 @@
-/*
- * *****************************************************************************
- * Copyright (C) 2014-2025 Dennis Sheirer
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>
- * ****************************************************************************
- */
 package io.github.dsheirer.module.decode.edacs;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -24,9 +6,15 @@ import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
 
+/**
+ * EDACS decode configuration with per-LCN frequency list.
+ * Frequencies are stored as a comma-separated string in XML, index = LCN-1.
+ * Example: "851175000,851225000,851425000,..." for MBTA.
+ */
 public class DecodeConfigEDACS extends DecodeConfiguration
 {
-    private String mChannelMapName;
+    private static final int MAX_LCN = 25;
+    private String mLcnFrequencies = "";
 
     public DecodeConfigEDACS()
     {
@@ -38,15 +26,67 @@ public class DecodeConfigEDACS extends DecodeConfiguration
         return DecoderType.EDACS;
     }
 
-    @JacksonXmlProperty(isAttribute = false, localName = "channelMapName")
-    public String getChannelMapName()
+    @JacksonXmlProperty(isAttribute = false, localName = "lcnFrequencies")
+    public String getLcnFrequencies()
     {
-        return mChannelMapName;
+        return mLcnFrequencies;
     }
 
-    public void setChannelMapName(String name)
+    public void setLcnFrequencies(String frequencies)
     {
-        mChannelMapName = name;
+        mLcnFrequencies = frequencies != null ? frequencies : "";
+    }
+
+    /**
+     * Gets the frequency in Hz for the given LCN (1-based).
+     * @param lcn logical channel number (1-25)
+     * @return frequency in Hz or 0 if not set
+     */
+    public long getFrequency(int lcn)
+    {
+        if(lcn < 1 || lcn > MAX_LCN || mLcnFrequencies == null || mLcnFrequencies.isEmpty())
+        {
+            return 0;
+        }
+
+        String[] parts = mLcnFrequencies.split(",");
+        if(lcn - 1 < parts.length)
+        {
+            try
+            {
+                return Long.parseLong(parts[lcn - 1].trim());
+            }
+            catch(NumberFormatException e)
+            {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * Gets all LCN frequencies as an array of Hz values (25 elements).
+     * Unset LCNs will have 0.
+     */
+    public long[] getFrequencies()
+    {
+        long[] freqs = new long[MAX_LCN];
+        if(mLcnFrequencies != null && !mLcnFrequencies.isEmpty())
+        {
+            String[] parts = mLcnFrequencies.split(",");
+            for(int i = 0; i < Math.min(parts.length, MAX_LCN); i++)
+            {
+                try
+                {
+                    freqs[i] = Long.parseLong(parts[i].trim());
+                }
+                catch(NumberFormatException e)
+                {
+                    freqs[i] = 0;
+                }
+            }
+        }
+        return freqs;
     }
 
     @JsonIgnore

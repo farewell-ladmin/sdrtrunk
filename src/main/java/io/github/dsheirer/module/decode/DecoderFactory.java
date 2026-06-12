@@ -197,7 +197,7 @@ public class DecoderFactory
                 processP25Phase2(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
                 break;
             case EDACS:
-                processEDACS(channelMapModel, channel, modules, aliasList, decodeConfig);
+                processEDACS(channel, modules, aliasList, decodeConfig);
                 break;
             default:
                 throw new IllegalArgumentException("Unknown decoder type [" + decodeConfig.getDecoderType().toString() + "]");
@@ -475,7 +475,7 @@ public class DecoderFactory
      * @param aliasList for the channel
      * @param decodeConfig for the channel
      */
-    private static void processEDACS(ChannelMapModel channelMapModel, Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
+    private static void processEDACS(Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
         EDACSDecoder decoder = new EDACSDecoder();
         modules.add(decoder);
         modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
@@ -484,15 +484,7 @@ public class DecoderFactory
 
         if(decodeConfig instanceof DecodeConfigEDACS edacsConfig)
         {
-            String mapName = edacsConfig.getChannelMapName();
-            if(mapName != null)
-            {
-                ChannelMap channelMap = channelMapModel.getChannelMap(mapName);
-                if(channelMap != null)
-                {
-                    state.setChannelMap(channelMap);
-                }
-            }
+            state.setLcnFrequencies(edacsConfig);
         }
     }
 
@@ -824,7 +816,7 @@ public class DecoderFactory
                 case EDACS:
                     DecodeConfigEDACS originalEDACS = (DecodeConfigEDACS)config;
                     DecodeConfigEDACS copyEDACS = new DecodeConfigEDACS();
-                    copyEDACS.setChannelMapName(originalEDACS.getChannelMapName());
+                    copyEDACS.setLcnFrequencies(originalEDACS.getLcnFrequencies());
                     return copyEDACS;
                 default:
                     throw new IllegalArgumentException("Unrecognized decoder configuration type:" + config.getDecoderType());
