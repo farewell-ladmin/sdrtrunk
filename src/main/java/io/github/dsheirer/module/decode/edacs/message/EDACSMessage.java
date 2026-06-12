@@ -16,6 +16,7 @@ public class EDACSMessage extends Message
 {
     private EDACSMessageType mMessageType;
     private CorrectedBinaryMessage mData;
+    private String mDetails;
 
     public EDACSMessage(EDACSMessageType messageType, CorrectedBinaryMessage data, long timestamp)
     {
@@ -43,7 +44,16 @@ public class EDACSMessage extends Message
         {
             sb.append(" BCH:FAIL");
         }
+        if(mDetails != null)
+        {
+            sb.append(" ").append(mDetails);
+        }
         return sb.toString();
+    }
+
+    public void setDetails(String details)
+    {
+        mDetails = details;
     }
 
     public EDACSMessageType getMessageType()

@@ -23,9 +23,11 @@ import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.DecoderStateEvent.Event;
 import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.message.IMessage;
+import io.github.dsheirer.message.IMessageListener;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
 
-public class EDACSDecoderState extends DecoderState
+public class EDACSDecoderState extends DecoderState implements IMessageListener
 {
     public EDACSDecoderState()
     {
@@ -42,7 +44,23 @@ public class EDACSDecoderState extends DecoderState
     {
         if(message.isValid())
         {
-            broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.IDLE));
+            if(message instanceof EDACSMessage edacs)
+            {
+                if(edacs.getMessageType() == EDACSMessageType.GROUP_CALL ||
+                   edacs.getMessageType() == EDACSMessageType.INDIVIDUAL_CALL ||
+                   edacs.getMessageType() == EDACSMessageType.ALL_CALL)
+                {
+                    broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
+                }
+                else
+                {
+                    broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
+                }
+            }
+            else
+            {
+                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.IDLE));
+            }
         }
     }
 

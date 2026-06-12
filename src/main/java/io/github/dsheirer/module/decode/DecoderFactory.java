@@ -479,9 +479,7 @@ public class DecoderFactory
         EDACSDecoder decoder = new EDACSDecoder();
         modules.add(decoder);
         modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
-        EDACSDecoderState state = new EDACSDecoderState();
-        modules.add(state);
-        decoder.setMessageListener(state);
+        modules.add(new EDACSDecoderState());
     }
 
     /**

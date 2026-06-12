@@ -234,15 +234,14 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
                 CorrectedBinaryMessage msgA = mVoter.vote(mBurstWords[0], mBurstWords[1], mBurstWords[2]);
                 if(msgA != null)
                 {
-                    mLog.info("EDACS MSG A decoded: BCH pass, bits=" + msgA.currentSize());
-                    EDACSMessage message = new EDACSMessage(EDACSMessageType.UNKNOWN, msgA, System.currentTimeMillis());
+                    EDACSMessage message = EDACSMessageFactory.create(msgA, System.currentTimeMillis());
                     getMessageListener().receive(message);
                 }
 
                 CorrectedBinaryMessage msgB = mVoter.vote(mBurstWords[3], mBurstWords[4], mBurstWords[5]);
                 if(msgB != null)
                 {
-                    EDACSMessage message = new EDACSMessage(EDACSMessageType.UNKNOWN, msgB, System.currentTimeMillis());
+                    EDACSMessage message = EDACSMessageFactory.create(msgB, System.currentTimeMillis());
                     getMessageListener().receive(message);
                 }
             }
