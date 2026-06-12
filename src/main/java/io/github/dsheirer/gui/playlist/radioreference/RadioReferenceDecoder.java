@@ -431,6 +431,11 @@ public class RadioReferenceDecoder
                 break;
             case "NXDN":
             case "EDACS":
+                if(flavor != null && (flavor.getName().contentEquals("Narrowband") || flavor.getName().contentEquals("SCAT")))
+                {
+                    return Protocol.EDACS_NB;
+                }
+                return Protocol.EDACS;
             case "TETRA":
             case "Midland CMS":
             case "OpenSky":
@@ -505,6 +510,11 @@ public class RadioReferenceDecoder
                 case "NXDN":
 
                 case "EDACS":
+                    if(flavor != null && (flavor.getName().contentEquals("Narrowband") || flavor.getName().contentEquals("SCAT")))
+                    {
+                        return DecoderType.EDACS_NB;
+                    }
+                    return DecoderType.EDACS;
                 case "TETRA":
                 case "Midland CMS":
                 case "OpenSky":
