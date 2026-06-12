@@ -22,9 +22,11 @@ import io.github.dsheirer.channel.state.DecoderState;
 import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.DecoderStateEvent.Event;
 import io.github.dsheirer.channel.state.State;
+import io.github.dsheirer.identifier.configuration.FrequencyConfigurationIdentifier;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.IMessageListener;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.edacs.channel.EDACSChannel;
 import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +35,7 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSDecoderState.class);
     private DecodeConfigEDACS mLcnFrequencies;
+    private long mLastCcFrequency = 0;
 
     public EDACSDecoderState()
     {
@@ -41,6 +44,21 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
     public void setLcnFrequencies(DecodeConfigEDACS config)
     {
         mLcnFrequencies = config;
+    }
+
+    private void updateControlChannel(int ccLcn)
+    {
+        if(mLcnFrequencies != null)
+        {
+            long newFreq = mLcnFrequencies.getFrequency(ccLcn);
+            if(newFreq > 0 && newFreq != mLastCcFrequency)
+            {
+                mLastCcFrequency = newFreq;
+                mLog.info("EDACS CC LCN " + ccLcn + " -> " + newFreq + " Hz - retuning");
+                getIdentifierCollection().update(FrequencyConfigurationIdentifier.create(newFreq));
+                setCurrentChannel(new EDACSChannel(ccLcn));
+            }
+        }
     }
 
     @Override
@@ -73,11 +91,7 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
                             int endIdx = details.indexOf(" ", ccIdx);
                             if(endIdx < 0) endIdx = details.length();
                             int ccLcn = Integer.parseInt(details.substring(ccIdx, endIdx));
-                            long ccFreq = mLcnFrequencies.getFrequency(ccLcn);
-                            if(ccFreq > 0)
-                            {
-                                mLog.info("EDACS CC LCN " + ccLcn + " -> " + ccFreq + " Hz");
-                            }
+                            updateControlChannel(ccLcn);
                         }
                         catch(Exception e) { /* parse error */ }
                     }
