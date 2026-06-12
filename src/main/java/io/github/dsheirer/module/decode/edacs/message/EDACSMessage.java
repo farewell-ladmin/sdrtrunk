@@ -56,6 +56,11 @@ public class EDACSMessage extends Message
         mDetails = details;
     }
 
+    public String getDetails()
+    {
+        return mDetails;
+    }
+
     public EDACSMessageType getMessageType()
     {
         return mMessageType;

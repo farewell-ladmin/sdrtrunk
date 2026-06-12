@@ -197,7 +197,7 @@ public class DecoderFactory
                 processP25Phase2(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
                 break;
             case EDACS:
-                processEDACS(channel, modules, aliasList, decodeConfig);
+                processEDACS(channelMapModel, channel, modules, aliasList, decodeConfig);
                 break;
             default:
                 throw new IllegalArgumentException("Unknown decoder type [" + decodeConfig.getDecoderType().toString() + "]");
@@ -475,11 +475,25 @@ public class DecoderFactory
      * @param aliasList for the channel
      * @param decodeConfig for the channel
      */
-    private static void processEDACS(Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
+    private static void processEDACS(ChannelMapModel channelMapModel, Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
         EDACSDecoder decoder = new EDACSDecoder();
         modules.add(decoder);
         modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
-        modules.add(new EDACSDecoderState());
+        EDACSDecoderState state = new EDACSDecoderState();
+        modules.add(state);
+
+        if(decodeConfig instanceof DecodeConfigEDACS edacsConfig)
+        {
+            String mapName = edacsConfig.getChannelMapName();
+            if(mapName != null)
+            {
+                ChannelMap channelMap = channelMapModel.getChannelMap(mapName);
+                if(channelMap != null)
+                {
+                    state.setChannelMap(channelMap);
+                }
+            }
+        }
     }
 
     /**
