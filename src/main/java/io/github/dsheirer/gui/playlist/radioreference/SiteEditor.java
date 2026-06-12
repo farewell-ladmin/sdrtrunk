@@ -38,6 +38,7 @@ import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.rrapi.type.Flavor;
 import io.github.dsheirer.rrapi.type.RadioNetwork;
 import io.github.dsheirer.rrapi.type.Site;
+import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
 import io.github.dsheirer.rrapi.type.SiteFrequency;
 import io.github.dsheirer.rrapi.type.System;
 import io.github.dsheirer.rrapi.type.SystemInformation;
@@ -313,6 +314,41 @@ public class SiteEditor extends GridPane
 
                 config.setScrambleParameters(new ScrambleParameters(wacn, system, nac));
                 return config;
+            case EDACS:
+            case EDACS_NB:
+            {
+                DecodeConfigEDACS edacsConfig = new DecodeConfigEDACS();
+                if(site != null)
+                {
+                    List<SiteFrequency> siteFreqs = site.getSiteFrequencies();
+                    int maxLcn = 0;
+                    for(SiteFrequency sf : siteFreqs)
+                    {
+                        int lcn = sf.getLogicalChannelNumber();
+                        if(lcn > maxLcn) maxLcn = lcn;
+                    }
+                    if(maxLcn > 0)
+                    {
+                        long[] lcnFreqs = new long[maxLcn];
+                        for(SiteFrequency sf : siteFreqs)
+                        {
+                            int lcn = sf.getLogicalChannelNumber();
+                            if(lcn > 0 && lcn <= maxLcn)
+                            {
+                                lcnFreqs[lcn - 1] = getFrequency(sf);
+                            }
+                        }
+                        StringBuilder sb = new StringBuilder();
+                        for(int i = 0; i < maxLcn; i++)
+                        {
+                            if(i > 0) sb.append(",");
+                            sb.append(lcnFreqs[i]);
+                        }
+                        edacsConfig.setLcnFrequencies(sb.toString());
+                    }
+                }
+                return edacsConfig;
+            }
             default:
                 return DecoderFactory.getDecodeConfiguration(decoderType);
         }
