@@ -33,3 +33,6 @@ gradle-app.setting
 
 # Cache of project
 .gradletasknamecache
+
+# AGENTS.md configuration (local only)
+AGENTS.md
