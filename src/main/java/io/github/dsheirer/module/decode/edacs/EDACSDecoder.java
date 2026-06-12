@@ -36,7 +36,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
     private final static Logger mLog = LoggerFactory.getLogger(EDACSDecoder.class);
 
     private static final int SYMBOL_RATE = 9600;
-    private static final int TARGET_SAMPLE_RATE = 48000;
+    private static final int MIN_SAMPLES_PER_SYMBOL = 2;
 
     private IDemodulator mFMDemodulator;
     private GFSK9600Decoder mGFSKDecoder;
@@ -110,7 +110,8 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         mSampleRate = sampleRate;
 
         int decimation = 1;
-        while((sampleRate / decimation) >= TARGET_SAMPLE_RATE)
+        int minRate = SYMBOL_RATE * MIN_SAMPLES_PER_SYMBOL;
+        while((sampleRate / decimation) >= (minRate * 2))
         {
             decimation *= 2;
         }
@@ -150,7 +151,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
     private class EDACSBurstDetector
     {
         private static final int BURST_LENGTH = 288; //Total bits in an EDACS burst (48 dotting + 240 data)
-        private static final int DOTTING_LENGTH = 48;
+        private static final int DOTTING_THRESHOLD = 30;  //Out of 48 bits of alternating dotting
         private static final int DATA_LENGTH = 240;
         private static final int WORD_LENGTH = 40;
 
@@ -177,8 +178,8 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
             mLastBit = bit;
 
-            //Burst detected when we see 40+ alternating bits (dotting sequence)
-            if(mConsecutiveAlts >= 40 && !mBurstArmed)
+            //Burst detected when we see enough alternating bits (dotting sequence)
+            if(mConsecutiveAlts >= DOTTING_THRESHOLD && !mBurstArmed)
             {
                 mBurstArmed = true;
             }
