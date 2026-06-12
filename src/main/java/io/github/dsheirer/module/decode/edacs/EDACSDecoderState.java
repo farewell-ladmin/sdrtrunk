@@ -133,11 +133,13 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
     @Override
     public void receive(IMessage message)
     {
+        //Track activity for rotation timer — update on ALL messages, not just valid ones
+        mLastMessageTime = System.currentTimeMillis();
+
         if(message.isValid())
         {
             if(message instanceof EDACSMessage edacs)
             {
-                mLastMessageTime = System.currentTimeMillis();
 
                 if(edacs.getMessageType() == EDACSMessageType.GROUP_CALL ||
                    edacs.getMessageType() == EDACSMessageType.INDIVIDUAL_CALL ||

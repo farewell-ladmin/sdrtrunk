@@ -190,7 +190,6 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
                 //End of burst — extract the data portion
             mBurstsDecoded++;
             mBurstArmed = false;
-            mLog.info("BURST DETECTED! Processing...");
             decodeBurst();
             }
         }
