@@ -197,7 +197,7 @@ public class DecoderFactory
                 processP25Phase2(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
                 break;
             case EDACS:
-                processEDACS(channel, modules, aliasList, decodeConfig);
+                processEDACS(userPreferences, channel, modules, aliasList, decodeConfig);
                 break;
             default:
                 throw new IllegalArgumentException("Unknown decoder type [" + decodeConfig.getDecoderType().toString() + "]");
@@ -475,7 +475,7 @@ public class DecoderFactory
      * @param aliasList for the channel
      * @param decodeConfig for the channel
      */
-    private static void processEDACS(Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
+    private static void processEDACS(UserPreferences userPreferences, Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
         EDACSDecoder decoder = new EDACSDecoder();
         modules.add(decoder);
         modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
@@ -485,6 +485,16 @@ public class DecoderFactory
         if(decodeConfig instanceof DecodeConfigEDACS edacsConfig)
         {
             state.setLcnFrequencies(edacsConfig);
+        }
+
+        //Add a channel rotation monitor when we have multiple control channel frequencies
+        if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
+                sctmf.hasMultipleFrequencies())
+        {
+            List<State> activeStates = new ArrayList<>();
+            activeStates.add(State.CONTROL);
+            activeStates.add(State.CALL);
+            modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
         }
     }
 
