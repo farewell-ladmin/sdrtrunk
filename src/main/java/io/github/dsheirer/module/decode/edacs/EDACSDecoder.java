@@ -114,6 +114,8 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         mQBasebandFilter = FilterFactory.getRealFilter(coefficients);
 
         mLog.info("EDACS decoder sample rate: " + decimatedRate + " (decimation: " + decimation + ")");
+
+        mSyncDetector.setSampleRate(decimatedRate);
     }
 
     public class SourceEventProcessor implements Listener<SourceEvent>

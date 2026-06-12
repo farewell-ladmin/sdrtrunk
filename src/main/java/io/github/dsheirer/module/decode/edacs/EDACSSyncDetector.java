@@ -35,14 +35,36 @@ public class EDACSSyncDetector
 
     private BCH_40_28_EDACS mBch = new BCH_40_28_EDACS();
 
+    //Resampling: like edacs-fm, we need 48000 Hz for 5x symbol rate
+    private double mSampleRate = 48000;
+    private double mSamplesPerSymbol = 5.0;
+    private double mSampleAccum = 0;
+    private float mPrevSample = 0;
+
+    public void setSampleRate(double sampleRate)
+    {
+        mSampleRate = sampleRate;
+        mSamplesPerSymbol = sampleRate / 9600.0;
+        mSampleAccum = 0;
+    }
+
     /**
-     * Processes FM-demodulated audio. Digitizes to bits via AFC threshold,
+     * Processes FM-demodulated audio. Digitizes to bits via AFC threshold at 9600 bps,
      * feeds shift registers, detects sync frames, extracts and decodes messages.
      */
     public void process(float[] demodulated, Listener<IMessage> messageListener)
     {
         for(float sample : demodulated)
         {
+            //Digitize at 9600 bps: subsample to ~1 sample per symbol
+            mSampleAccum += 1.0;
+            if(mSampleAccum < mSamplesPerSymbol)
+            {
+                mPrevSample = sample;
+                continue;
+            }
+            mSampleAccum -= mSamplesPerSymbol;
+
             short s = (short)(sample * 32767.0f);
 
             mAfcHistory[mAfcHistoryPtr] = s;
