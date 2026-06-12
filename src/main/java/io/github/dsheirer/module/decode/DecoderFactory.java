@@ -486,16 +486,6 @@ public class DecoderFactory
         {
             state.setLcnFrequencies(edacsConfig);
         }
-
-        //Add a channel rotation monitor when we have multiple control channel frequencies
-        if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
-                sctmf.hasMultipleFrequencies())
-        {
-            List<State> activeStates = new ArrayList<>();
-            activeStates.add(State.CONTROL);
-            activeStates.add(State.CALL);
-            modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
-        }
     }
 
     /**

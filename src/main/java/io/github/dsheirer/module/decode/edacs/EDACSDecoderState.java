@@ -28,7 +28,11 @@ import io.github.dsheirer.message.IMessageListener;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.edacs.channel.EDACSChannel;
 import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
-import io.github.dsheirer.source.tuner.channel.rotation.AddChannelRotationActiveStateRequest;
+import io.github.dsheirer.util.ThreadPool;
+
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,9 +41,67 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
     private final static Logger mLog = LoggerFactory.getLogger(EDACSDecoderState.class);
     private DecodeConfigEDACS mLcnFrequencies;
     private long mLastCcFrequency = 0;
+    private long mLastMessageTime = 0;
+    private int mCurrentFreqIndex = 0;
+    private static final long ROTATION_DELAY_MS = 15000;
+    private ScheduledFuture<?> mRotationTimer;
 
     public EDACSDecoderState()
     {
+    }
+
+    @Override
+    public void start()
+    {
+        super.start();
+        mLastMessageTime = System.currentTimeMillis();
+        startRotationTimer();
+    }
+
+    @Override
+    public void stop()
+    {
+        super.stop();
+        stopRotationTimer();
+    }
+
+    private void startRotationTimer()
+    {
+        if(mRotationTimer == null)
+        {
+            mRotationTimer = ThreadPool.SCHEDULED.scheduleAtFixedRate(this::checkRotation,
+                ROTATION_DELAY_MS, ROTATION_DELAY_MS / 3, TimeUnit.MILLISECONDS);
+        }
+    }
+
+    private void stopRotationTimer()
+    {
+        if(mRotationTimer != null)
+        {
+            mRotationTimer.cancel(true);
+            mRotationTimer = null;
+        }
+    }
+
+    private void checkRotation()
+    {
+        if(mLcnFrequencies != null && System.currentTimeMillis() - mLastMessageTime > ROTATION_DELAY_MS)
+        {
+            long[] freqs = mLcnFrequencies.getFrequencies();
+            //Find next non-zero frequency
+            for(int attempts = 0; attempts < freqs.length; attempts++)
+            {
+                mCurrentFreqIndex = (mCurrentFreqIndex + 1) % freqs.length;
+                long nextFreq = freqs[mCurrentFreqIndex];
+                if(nextFreq > 0 && nextFreq != getCurrentFrequency())
+                {
+                    mLog.info("EDACS rotating to frequency index " + mCurrentFreqIndex + " -> " + nextFreq + " Hz");
+                    getIdentifierCollection().update(FrequencyConfigurationIdentifier.create(nextFreq));
+                    mLastMessageTime = System.currentTimeMillis();
+                    break;
+                }
+            }
+        }
     }
 
     public void setLcnFrequencies(DecodeConfigEDACS config)
@@ -75,13 +137,13 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
         {
             if(message instanceof EDACSMessage edacs)
             {
+                mLastMessageTime = System.currentTimeMillis();
+
                 if(edacs.getMessageType() == EDACSMessageType.GROUP_CALL ||
                    edacs.getMessageType() == EDACSMessageType.INDIVIDUAL_CALL ||
                    edacs.getMessageType() == EDACSMessageType.ALL_CALL)
                 {
                     broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
-                    if(hasInterModuleEventBus())
-                        getInterModuleEventBus().post(new AddChannelRotationActiveStateRequest(State.CALL));
                 }
                 else if(edacs.getMessageType() == EDACSMessageType.SYSTEM_INFO && mLcnFrequencies != null)
                 {
@@ -102,8 +164,6 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
                 else
                 {
                     broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
-                    if(hasInterModuleEventBus())
-                        getInterModuleEventBus().post(new AddChannelRotationActiveStateRequest(State.CONTROL));
                 }
             }
             else
