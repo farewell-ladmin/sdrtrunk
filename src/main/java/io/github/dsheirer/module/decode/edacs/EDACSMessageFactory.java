@@ -17,12 +17,19 @@ public class EDACSMessageFactory
 
     public static EDACSMessage create(CorrectedBinaryMessage data, long timestamp)
     {
+        return create(data, null, timestamp);
+    }
+
+    public static EDACSMessage create(CorrectedBinaryMessage data, CorrectedBinaryMessage data2, long timestamp)
+    {
         int msg_1 = getInt(data, 0, 28);
+        int msg_2 = data2 != null ? getInt(data2, 0, 28) : 0;
 
         //Apply ESK mask (MBTA uses 0xA0)
         int eskMask = 0xA0;
         int beforeMsk = msg_1;
         msg_1 = msg_1 ^ (eskMask << 20);
+        if(data2 != null) msg_2 = msg_2 ^ (eskMask << 20);
 
         int mt1 = (msg_1 >> 23) & 0x1F;
         int mt2 = (msg_1 >> 19) & 0x0F;
@@ -55,7 +62,7 @@ public class EDACSMessageFactory
                     break;
                 case 0x8:
                     type = EDACSMessageType.SYSTEM_INFO;
-                    int ccLcn = (msg_1 >> 13) & 0x1F;
+                    int ccLcn = msg_2 & 0x1F;
                     int systemId = msg_1 & 0xFFFF;
                     details.append("CC LCN:").append(ccLcn).append(" SYS:").append(Integer.toHexString(systemId));
                     break;
