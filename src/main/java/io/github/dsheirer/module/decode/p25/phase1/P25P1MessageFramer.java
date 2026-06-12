@@ -123,12 +123,15 @@ public class P25P1MessageFramer
      */
     public void syncDetected()
     {
-        //Only allow sync detection processing if we're not currently assembling a message
-        if(mMessageAssembler == null)
+        //If a stale assembler exists from a previous message that was never completed (e.g. due to
+        //sync loss mid-assembly), force-complete and dispatch it before accepting the new sync.
+        if(mMessageAssembler != null)
         {
-            mSyncDetected = true;
-            mNIDPointer = 0;
+            dispatchStaleAssembler();
         }
+
+        mSyncDetected = true;
+        mNIDPointer = 0;
     }
 
     /**
@@ -267,6 +270,20 @@ public class P25P1MessageFramer
         }
         else
         {
+            mMessageAssembler = null;
+        }
+    }
+
+    /**
+     * Force-completes and disposes a stale message assembler that was left incomplete due to sync loss.
+     */
+    private void dispatchStaleAssembler()
+    {
+        if(mMessageAssembler != null)
+        {
+            mMessageAssembler.forceCompletion(mPreviousDataUnitID, mDetectedDataUnitID);
+            adjustDibitCounterFromMessageAssembler();
+            dispatchSyncLoss(mMessageAssembler.getMessage().currentSize());
             mMessageAssembler = null;
         }
     }

@@ -145,6 +145,11 @@ public class SDRTrunk implements Listener<TunerEvent>
 
     public SDRTrunk()
     {
+        if(Boolean.getBoolean("sdrtrunk.dev") && !checkSingleInstance())
+        {
+            return;
+        }
+
         if(!GraphicsEnvironment.isHeadless())
         {
             mMainGui = new JFrame();
@@ -807,6 +812,52 @@ public class SDRTrunk implements Listener<TunerEvent>
         }
 
         return homePath;
+    }
+
+    /**
+     * Checks for another running instance and prevents double-launch. Creates a PID lock file in the
+     * application home directory. If a lock file exists and the PID is still alive, shows a warning
+     * dialog and exits. If the PID is stale (process no longer running), takes the lock.
+     */
+    private boolean checkSingleInstance()
+    {
+        Path lockFile = getHomePath().resolve("sdrtrunk.lock");
+        long currentPid = ProcessHandle.current().pid();
+
+        try
+        {
+            if(Files.exists(lockFile))
+            {
+                String content = Files.readString(lockFile).trim();
+                long existingPid = Long.parseLong(content);
+
+                if(existingPid != currentPid)
+                {
+                    Optional<ProcessHandle> existingProcess = ProcessHandle.of(existingPid);
+                    if(existingProcess.isPresent() && existingProcess.get().isAlive())
+                    {
+                        if(!GraphicsEnvironment.isHeadless())
+                        {
+                            JOptionPane.showMessageDialog(null,
+                                "Another instance of sdrtrunk is already running (PID: " + existingPid + ").\n" +
+                                "Only one instance can access the tuner hardware at a time.",
+                                "sdrtrunk Already Running", JOptionPane.WARNING_MESSAGE);
+                        }
+                        mLog.warn("Another instance is already running (PID: " + existingPid + "). Exiting.");
+                        return false;
+                    }
+                }
+            }
+
+            Files.writeString(lockFile, String.valueOf(currentPid));
+            lockFile.toFile().deleteOnExit();
+            return true;
+        }
+        catch(IOException ioe)
+        {
+            mLog.error("Unable to create application lock file. Proceeding without lock.", ioe);
+            return true;
+        }
     }
 
     @Override
