@@ -2,6 +2,8 @@ package io.github.dsheirer.module.decode.edacs;
 
 import io.github.dsheirer.bits.CorrectedBinaryMessage;
 import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * EDACS Extended Addressing (EA) message parser.
@@ -11,11 +13,22 @@ import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
  */
 public class EDACSMessageFactory
 {
+    private static final Logger mLog = LoggerFactory.getLogger(EDACSMessageFactory.class);
+
     public static EDACSMessage create(CorrectedBinaryMessage data, long timestamp)
     {
         int msg_1 = getInt(data, 0, 28);
+
+        //Apply ESK mask (MBTA uses 0xA0)
+        int eskMask = 0xA0;
+        int beforeMsk = msg_1;
+        msg_1 = msg_1 ^ (eskMask << 20);
+
         int mt1 = (msg_1 >> 23) & 0x1F;
         int mt2 = (msg_1 >> 19) & 0x0F;
+
+        //Log first message to verify ESK is applied
+        mLog.info("EDACS msg raw=" + Integer.toHexString(beforeMsk) + " mt1=" + mt1 + " (" + ((beforeMsk >> 23) & 0x1F) + " before XOR)");
 
         EDACSMessageType type = EDACSMessageType.UNKNOWN;
         StringBuilder details = new StringBuilder();
@@ -67,6 +80,14 @@ public class EDACSMessageFactory
         {
             switch(mt1)
             {
+                case 0x01:
+                    type = EDACSMessageType.GROUP_CALL;
+                    details.append("TDMA Group Call");
+                    break;
+                case 0x02:
+                    type = EDACSMessageType.STATUS;
+                    details.append("Data Group Call");
+                    break;
                 case 0x03:
                 case 0x06:
                 {
@@ -74,19 +95,24 @@ public class EDACSMessageFactory
                     int lcn = (msg_1 >> 17) & 0x1F;
                     int group = msg_1 & 0xFFFF;
                     boolean digital = (mt1 == 0x03);
-                    details.append(digital ? "Digital" : "Analog").append(" Group Call TG:").append(group).append(" LCN:").append(lcn);
+                    details.append(String.format("%s Group Call TG:%d LCN:%d [%07X]", 
+                        digital ? "Digital" : "Analog", group, lcn, msg_1 & 0xFFFFFFF));
                     break;
                 }
                 case 0x10:
                     type = EDACSMessageType.INDIVIDUAL_CALL;
                     details.append("I-Call");
                     break;
+                case 0x12:
+                    type = EDACSMessageType.STATUS;
+                    details.append("Channel Assignment");
+                    break;
                 case 0x16:
                     type = EDACSMessageType.ALL_CALL;
                     details.append("All-Call");
                     break;
                 default:
-                    details.append("MT1:").append(mt1);
+                    details.append(String.format("MT1:%d [%07X]", mt1, msg_1 & 0xFFFFFFF));
                     break;
             }
         }

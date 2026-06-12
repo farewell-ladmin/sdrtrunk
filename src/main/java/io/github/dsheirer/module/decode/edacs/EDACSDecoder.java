@@ -103,11 +103,6 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         float[] demodulated = mFMDemodulator.demodulate(filteredI, filteredQ);
 
         mGFSKDecoder.process(demodulated, bit -> mBurstDetector.receive(bit));
-
-        if(mBurstDetector.mBurstsDecoded > 0)
-        {
-            mLog.info("BURSTS DECODED: " + mBurstDetector.mBurstsDecoded);
-        }
     }
 
     private void setSampleRate(double sampleRate)
