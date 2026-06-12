@@ -28,6 +28,7 @@ import io.github.dsheirer.message.IMessageListener;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.edacs.channel.EDACSChannel;
 import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
+import io.github.dsheirer.source.tuner.channel.rotation.AddChannelRotationActiveStateRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -79,6 +80,8 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
                    edacs.getMessageType() == EDACSMessageType.ALL_CALL)
                 {
                     broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
+                    if(hasInterModuleEventBus())
+                        getInterModuleEventBus().post(new AddChannelRotationActiveStateRequest(State.CALL));
                 }
                 else if(edacs.getMessageType() == EDACSMessageType.SYSTEM_INFO && mLcnFrequencies != null)
                 {
@@ -99,6 +102,8 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
                 else
                 {
                     broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
+                    if(hasInterModuleEventBus())
+                        getInterModuleEventBus().post(new AddChannelRotationActiveStateRequest(State.CONTROL));
                 }
             }
             else
