@@ -62,6 +62,7 @@ import io.github.dsheirer.module.decode.lj1200.LJ1200Decoder;
 import io.github.dsheirer.module.decode.lj1200.LJ1200DecoderState;
 import io.github.dsheirer.module.decode.lj1200.LJ1200MessageFilter;
 import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
+import io.github.dsheirer.module.decode.edacs.EDACSDecoder;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoderState;
 import io.github.dsheirer.module.decode.ltrnet.DecodeConfigLTRNet;
 import io.github.dsheirer.module.decode.ltrnet.LTRNetDecoder;
@@ -475,12 +476,12 @@ public class DecoderFactory
      * @param decodeConfig for the channel
      */
     private static void processEDACS(Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
+        EDACSDecoder decoder = new EDACSDecoder();
+        modules.add(decoder);
         modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
-        modules.add(new EDACSDecoderState());
-        if(channel.getSourceConfiguration().getSourceType() == SourceType.TUNER)
-        {
-            modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH));
-        }
+        EDACSDecoderState state = new EDACSDecoderState();
+        modules.add(state);
+        decoder.setMessageListener(state);
     }
 
     /**
