@@ -171,6 +171,12 @@ application {
     }
 }
 
+//Local development run task: constrain heap to avoid runaway JVM growth during testing.
+//These limits apply to ./gradlew run only — NOT to release distributions.
+tasks.named('run') {
+    jvmArgs += ['-Xms256m', '-Xmx1g']
+}
+
 test {
     if(os.isWindows()) {
         jvmArgs = jvmArgsWindows
