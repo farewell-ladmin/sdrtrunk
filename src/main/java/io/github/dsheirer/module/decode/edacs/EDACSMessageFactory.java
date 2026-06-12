@@ -25,8 +25,8 @@ public class EDACSMessageFactory
         int msg_1 = getInt(data, 0, 28);
         int msg_2 = data2 != null ? getInt(data2, 0, 28) : 0;
 
-        //Apply ESK mask (MBTA uses 0xA0)
-        int eskMask = 0xA0;
+        //Apply ESK mask (0xA0 is common for EDACS EA, 0x00 disables)
+        int eskMask = 0x00;
         int beforeMsk = msg_1;
         msg_1 = msg_1 ^ (eskMask << 20);
         if(data2 != null) msg_2 = msg_2 ^ (eskMask << 20);
@@ -35,7 +35,7 @@ public class EDACSMessageFactory
         int mt2 = (msg_1 >> 19) & 0x0F;
 
         //Log first message to verify ESK is applied
-        mLog.info("EDACS msg raw=" + Integer.toHexString(beforeMsk) + " mt1=" + mt1 + " (" + ((beforeMsk >> 23) & 0x1F) + " before XOR)");
+        //mLog.info("EDACS msg raw=" + Integer.toHexString(beforeMsk) + " mt1=" + mt1 + " (" + ((beforeMsk >> 23) & 0x1F) + " before XOR)");
 
         EDACSMessageType type = EDACSMessageType.UNKNOWN;
         StringBuilder details = new StringBuilder();
