@@ -19,6 +19,9 @@
 
 package io.github.dsheirer.gui.playlist.channel;
 
+import io.github.dsheirer.controller.channel.map.ChannelMap;
+import io.github.dsheirer.eventbus.MyEventBus;
+import io.github.dsheirer.gui.playlist.channelMap.ViewChannelMapEditorRequest;
 import io.github.dsheirer.gui.playlist.decoder.AuxDecoderConfigurationEditor;
 import io.github.dsheirer.gui.playlist.eventlog.EventLogConfigurationEditor;
 import io.github.dsheirer.gui.playlist.record.RecordConfigurationEditor;
@@ -38,9 +41,16 @@ import io.github.dsheirer.source.config.SourceConfiguration;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import java.util.ArrayList;
 import java.util.List;
+import javafx.event.ActionEvent;
+import javafx.event.EventHandler;
+import javafx.geometry.HPos;
 import javafx.geometry.Insets;
+import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TitledPane;
+import javafx.scene.control.Tooltip;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,6 +70,8 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     private AuxDecoderConfigurationEditor mAuxDecoderConfigurationEditor;
     private EventLogConfigurationEditor mEventLogConfigurationEditor;
     private RecordConfigurationEditor mRecordConfigurationEditor;
+    private ComboBox<ChannelMap> mChannelMapComboBox;
+    private Button mChannelMapEditButton;
 
     public EDACSConfigurationEditor(PlaylistManager playlistManager, TunerManager tunerManager,
                                      UserPreferences userPreferences, IFilterProcessor filterProcessor)
@@ -97,9 +109,23 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
             mDecoderPane.setText("Decoder: EDACS");
             mDecoderPane.setExpanded(false);
 
-            Label label = new Label("EDACS configuration");
-            label.setPadding(new Insets(10, 10, 10, 10));
-            mDecoderPane.setContent(label);
+            GridPane gridPane = new GridPane();
+            gridPane.setPadding(new Insets(10, 10, 10, 10));
+            gridPane.setHgap(10);
+            gridPane.setVgap(10);
+
+            Label channelMapLabel = new Label("Channel Map");
+            GridPane.setHalignment(channelMapLabel, HPos.RIGHT);
+            GridPane.setConstraints(channelMapLabel, 0, 0);
+            gridPane.getChildren().add(channelMapLabel);
+
+            GridPane.setConstraints(getChannelMapComboBox(), 1, 0, 2, 1, HPos.LEFT, null, null, null);
+            gridPane.getChildren().add(getChannelMapComboBox());
+
+            GridPane.setConstraints(getChannelMapEditButton(), 3, 0);
+            gridPane.getChildren().add(getChannelMapEditButton());
+
+            mDecoderPane.setContent(gridPane);
         }
 
         return mDecoderPane;
@@ -160,6 +186,47 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         return mSourceConfigurationEditor;
     }
 
+    private ComboBox<ChannelMap> getChannelMapComboBox()
+    {
+        if(mChannelMapComboBox == null)
+        {
+            mChannelMapComboBox = new ComboBox<>();
+            mChannelMapComboBox.setMaxWidth(Double.MAX_VALUE);
+            mChannelMapComboBox.setDisable(true);
+            mChannelMapComboBox.setTooltip(new Tooltip("Select a channel map for EDACS LCN to frequency mapping"));
+            mChannelMapComboBox.setItems(getPlaylistManager().getChannelMapModel().getChannelMaps());
+            mChannelMapComboBox.setDisable(true);
+            mChannelMapComboBox.getSelectionModel().selectedItemProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mChannelMapComboBox;
+    }
+
+    private Button getChannelMapEditButton()
+    {
+        if(mChannelMapEditButton == null)
+        {
+            mChannelMapEditButton = new Button("Channel Map Editor");
+            mChannelMapEditButton.setTooltip(new Tooltip("Open the channel map editor to add/edit LCN frequency maps"));
+            mChannelMapEditButton.setOnAction(new EventHandler<ActionEvent>()
+            {
+                @Override
+                public void handle(ActionEvent event)
+                {
+                    String channelMapName = null;
+                    if(getChannelMapComboBox().getSelectionModel().getSelectedItem() != null)
+                    {
+                        channelMapName = getChannelMapComboBox().getSelectionModel().getSelectedItem().getName();
+                    }
+                    MyEventBus.getGlobalEventBus().post(new ViewChannelMapEditorRequest(channelMapName));
+                }
+            });
+        }
+
+        return mChannelMapEditButton;
+    }
+
     private EventLogConfigurationEditor getEventLogConfigurationEditor()
     {
         if(mEventLogConfigurationEditor == null)
@@ -209,15 +276,58 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     @Override
     protected void setDecoderConfiguration(DecodeConfiguration config)
     {
+        getChannelMapComboBox().setDisable(config == null);
+
+        if(config instanceof DecodeConfigEDACS decodeConfigEDACS)
+        {
+            String channelMapName = decodeConfigEDACS.getChannelMapName();
+            if(channelMapName != null)
+            {
+                for(ChannelMap channelMap: getChannelMapComboBox().getItems())
+                {
+                    if(channelMap.getName().contentEquals(channelMapName))
+                    {
+                        getChannelMapComboBox().getSelectionModel().select(channelMap);
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                getChannelMapComboBox().getSelectionModel().select(null);
+            }
+        }
+        else
+        {
+            getChannelMapComboBox().getSelectionModel().select(null);
+        }
     }
 
     @Override
     protected void saveDecoderConfiguration()
     {
-        if(!(getItem().getDecodeConfiguration() instanceof DecodeConfigEDACS))
+        DecodeConfigEDACS config;
+
+        if(getItem().getDecodeConfiguration() instanceof DecodeConfigEDACS)
         {
-            getItem().setDecodeConfiguration(new DecodeConfigEDACS());
+            config = (DecodeConfigEDACS)getItem().getDecodeConfiguration();
         }
+        else
+        {
+            config = new DecodeConfigEDACS();
+        }
+
+        ChannelMap selected = getChannelMapComboBox().getSelectionModel().getSelectedItem();
+        if(selected != null)
+        {
+            config.setChannelMapName(selected.getName());
+        }
+        else
+        {
+            config.setChannelMapName(null);
+        }
+
+        getItem().setDecodeConfiguration(config);
     }
 
     @Override
