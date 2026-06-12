@@ -21,7 +21,7 @@ public class EDACSSyncDetector
     private static final int BURST_LENGTH = 288;     //48 dotting + 240 data
     private static final int DATA_LENGTH = 240;
     private static final int WORD_LENGTH = 40;
-    private static final int DOTTING_THRESHOLD = 30; //consecutive alternating bits to trigger
+    private static final int DOTTING_THRESHOLD = 20; //consecutive alternating bits to trigger (was 30)
 
     private boolean[] mBuffer = new boolean[BURST_LENGTH];
     private int mBufferPointer = 0;
@@ -33,9 +33,11 @@ public class EDACSSyncDetector
     private EDACSVoter mVoter = new EDACSVoter();
     private BCH_40_28_EDACS mBch = new BCH_40_28_EDACS();
 
-    //Subsampling: digitize at 9600 bps
+    //Subsampling: integrate FM deviation over each symbol period for cleaner bits
     private double mSamplesPerSymbol = 2.6;
     private double mSampleAccum = 0;
+    private float mDeviationSum = 0;
+    private int mDeviationCount = 0;
 
     //AFC offset tracking
     private short[] mAfcHistory = new short[960];
@@ -54,13 +56,23 @@ public class EDACSSyncDetector
     {
         for(float sample : demodulated)
         {
-            //Subsample to ~9600 bps
+            //Integrate FM deviation over symbol period for cleaner bit decision
+            mDeviationSum += sample;
+            mDeviationCount++;
             mSampleAccum += 1.0;
-            if(mSampleAccum < mSamplesPerSymbol) continue;
+
+            if(mSampleAccum < mSamplesPerSymbol)
+                continue;
+
             mSampleAccum -= mSamplesPerSymbol;
 
-            //Digitize via AFC threshold
-            short s = (short)(sample * 32767.0f);
+            //Average deviation over the symbol period
+            float avgDeviation = mDeviationSum / mDeviationCount;
+            mDeviationSum = 0;
+            mDeviationCount = 0;
+
+            //Digitize: convert average deviation to hard bit via AFC threshold
+            short s = (short)(avgDeviation * 32767.0f);
 
             mAfcHistory[mAfcHistoryPtr] = s;
             mAfcHistoryPtr = (mAfcHistoryPtr + 1) % AFC_WINDOW;
