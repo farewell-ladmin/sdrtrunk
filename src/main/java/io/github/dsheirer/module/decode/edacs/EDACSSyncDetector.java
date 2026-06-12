@@ -8,38 +8,23 @@ import io.github.dsheirer.sample.Listener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * EDACS dotting-based burst detector with subsampled 9600 bps bit extraction.
- * Looks for alternating dotting sequence, frames 240-bit data bursts,
- * extracts 6x40-bit words, votes and BCH-checks them.
- */
 public class EDACSSyncDetector
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSSyncDetector.class);
 
-    private static final int DOTTING_LENGTH = 48;
-    private static final int BURST_LENGTH = 288;     //48 dotting + 240 data
-    private static final int DATA_LENGTH = 240;
-    private static final int WORD_LENGTH = 40;
-    private static final int DOTTING_THRESHOLD = 20; //consecutive alternating bits to trigger (was 30)
+    private static final long SYNC_FRAME = 0x555557125555L;
+    private static final long SYNC_MASK  = 0xFFFFFFFFFFFFL;
+    private static final int SYNC_MIN_BITS = 44; //Allow 4 bit errors out of 48
 
-    private boolean[] mBuffer = new boolean[BURST_LENGTH];
-    private int mBufferPointer = 0;
-    private int mConsecutiveAlts = 0;
-    private boolean mLastBit;
-    private boolean mBurstArmed;
-    private CorrectedBinaryMessage[] mBurstWords = new CorrectedBinaryMessage[6];
+    private long mSr0, mSr1, mSr2, mSr3, mSr4;
 
-    private EDACSVoter mVoter = new EDACSVoter();
     private BCH_40_28_EDACS mBch = new BCH_40_28_EDACS();
 
-    //Subsampling: integrate FM deviation over each symbol period for cleaner bits
-    private double mSamplesPerSymbol = 2.6;
+    private double mSamplesPerSymbol = 5.0;
     private double mSampleAccum = 0;
     private float mDeviationSum = 0;
     private int mDeviationCount = 0;
 
-    //AFC offset tracking
     private short[] mAfcHistory = new short[960];
     private int mAfcHistoryPtr = 0;
     private short mAfc = 0;
@@ -56,33 +41,24 @@ public class EDACSSyncDetector
     {
         for(float sample : demodulated)
         {
-            //Integrate FM deviation over symbol period for cleaner bit decision
             mDeviationSum += sample;
             mDeviationCount++;
             mSampleAccum += 1.0;
-
-            if(mSampleAccum < mSamplesPerSymbol)
-                continue;
-
+            if(mSampleAccum < mSamplesPerSymbol) continue;
             mSampleAccum -= mSamplesPerSymbol;
 
-            //Average deviation over the symbol period
             float avgDeviation = mDeviationSum / mDeviationCount;
             mDeviationSum = 0;
             mDeviationCount = 0;
 
-            //Digitize: convert average deviation to hard bit via AFC threshold
             short s = (short)(avgDeviation * 32767.0f);
-
             mAfcHistory[mAfcHistoryPtr] = s;
             mAfcHistoryPtr = (mAfcHistoryPtr + 1) % AFC_WINDOW;
             mSampleCount++;
-
             if(mSampleCount >= AFC_WINDOW)
             {
                 mSampleCount = 0;
-                short min = Short.MAX_VALUE;
-                short max = Short.MIN_VALUE;
+                short min = Short.MAX_VALUE, max = Short.MIN_VALUE;
                 for(int i = 0; i < AFC_WINDOW; i++)
                 {
                     if(mAfcHistory[i] < min) min = mAfcHistory[i];
@@ -93,61 +69,47 @@ public class EDACSSyncDetector
 
             boolean bit = s >= mAfc;
 
-            mBuffer[mBufferPointer] = bit;
-            mBufferPointer = (mBufferPointer + 1) % BURST_LENGTH;
+            mSr0 = (mSr0 << 1) | ((mSr1 >>> 63) & 1);
+            mSr1 = (mSr1 << 1) | ((mSr2 >>> 63) & 1);
+            mSr2 = (mSr2 << 1) | ((mSr3 >>> 63) & 1);
+            mSr3 = (mSr3 << 1) | ((mSr4 >>> 63) & 1);
+            mSr4 = (mSr4 << 1) | (bit ? 1 : 0);
 
-            //Dotting detection
-            if(bit != mLastBit) { mConsecutiveAlts++; }
-            else { mConsecutiveAlts = 0; }
-            mLastBit = bit;
-
-            if(mConsecutiveAlts >= DOTTING_THRESHOLD && !mBurstArmed)
+            long masked = mSr0 & SYNC_MASK;
+            int errors = Long.bitCount(masked ^ SYNC_FRAME);
+            if(errors <= (48 - SYNC_MIN_BITS))
             {
-                mBurstArmed = true;
-            }
-
-            if(mBurstArmed && mConsecutiveAlts < 2)
-            {
-                mBurstArmed = false;
-                decodeBurst(messageListener);
+                decodeFrame(messageListener);
             }
         }
     }
 
-    private void decodeBurst(Listener<IMessage> messageListener)
+    private void decodeFrame(Listener<IMessage> messageListener)
     {
-        int start = (mBufferPointer + BURST_LENGTH - DATA_LENGTH) % BURST_LENGTH;
+        long fr1Raw = ((mSr0 & 0xFFFFL) << 24) | ((mSr1 & 0xFFFFFF0000000000L) >>> 40);
+        long fr4Raw = ((mSr2 & 0xFFFFFFL) << 16) | ((mSr3 & 0xFFFF000000000000L) >>> 48);
 
-        for(int wordNum = 0; wordNum < 6; wordNum++)
-        {
-            CorrectedBinaryMessage word = new CorrectedBinaryMessage(WORD_LENGTH);
-            for(int bit = 0; bit < WORD_LENGTH; bit++)
-            {
-                int index = (start + wordNum * WORD_LENGTH + bit) % BURST_LENGTH;
-                if(mBuffer[index]) word.set(bit);
-            }
-            mBurstWords[wordNum] = word;
-        }
+        CorrectedBinaryMessage cbm1 = toCBM(fr1Raw, 40);
+        CorrectedBinaryMessage cbm4 = toCBM(fr4Raw, 40);
 
-        try
-        {
-            CorrectedBinaryMessage msgA = mVoter.vote(mBurstWords[0], mBurstWords[1], mBurstWords[2]);
-            CorrectedBinaryMessage msgB = mVoter.vote(mBurstWords[3], mBurstWords[4], mBurstWords[5]);
+        CorrectedBinaryMessage data1 = mBch.decodeCodeword(cbm1);
+        CorrectedBinaryMessage data4 = mBch.decodeCodeword(cbm4);
 
-            if(msgA != null)
-            {
-                EDACSMessage message = EDACSMessageFactory.create(msgA, msgB, System.currentTimeMillis());
-                if(messageListener != null) messageListener.receive(message);
-            }
-            else if(msgB != null)
-            {
-                EDACSMessage message = EDACSMessageFactory.create(msgB, System.currentTimeMillis());
-                if(messageListener != null) messageListener.receive(message);
-            }
-        }
-        catch(Exception e)
+        if(data1 != null || data4 != null)
         {
-            mLog.debug("Error processing EDACS burst", e);
+            EDACSMessage message = EDACSMessageFactory.create(
+                data1 != null ? data1 : data4,
+                data1 != null && data4 != null ? data4 : null,
+                System.currentTimeMillis());
+            if(messageListener != null) messageListener.receive(message);
         }
+    }
+
+    private CorrectedBinaryMessage toCBM(long value, int bits)
+    {
+        CorrectedBinaryMessage cbm = new CorrectedBinaryMessage(bits);
+        for(int i = 0; i < bits; i++)
+            if((value & (1L << i)) != 0) cbm.set(bits - 1 - i);
+        return cbm;
     }
 }
