@@ -65,19 +65,19 @@ public class P25P2SyncDetector implements Listener<Dibit>
 
         if(phaseLockedLoop != null)
         {
-//            //Add additional sync pattern detectors to detect when we get 90/180 degree out of phase sync pattern
-//            //detections so that we can apply correction to the phase locked loop
-//            mInversionDetector90CW = new PLLPhaseInversionDetector(FrameSync.P25_PHASE2_ERROR_90_CW,
-//                phaseLockedLoop, DEFAULT_SAMPLE_RATE, FREQUENCY_PHASE_CORRECTION_90_DEGREES);
-//            mMatcher.add(mInversionDetector90CW);
-//
-//            mInversionDetector90CCW = new PLLPhaseInversionDetector(FrameSync.P25_PHASE2_ERROR_90_CCW,
-//                phaseLockedLoop, DEFAULT_SAMPLE_RATE, -FREQUENCY_PHASE_CORRECTION_90_DEGREES);
-//            mMatcher.add(mInversionDetector90CCW);
-//
-//            mInversionDetector180 = new PLLPhaseInversionDetector(FrameSync.P25_PHASE2_ERROR_180,
-//                phaseLockedLoop, DEFAULT_SAMPLE_RATE, FREQUENCY_PHASE_CORRECTION_180_DEGREES);
-//            mMatcher.add(mInversionDetector180);
+            //Add additional sync pattern detectors to detect when we get 90/180 degree out of phase sync pattern
+            //detections so that we can apply correction to the phase locked loop
+            mInversionDetector90CW = new PLLPhaseInversionDetector(FrameSync.P25_PHASE2_ERROR_90_CW,
+                phaseLockedLoop, DEFAULT_SAMPLE_RATE, FREQUENCY_PHASE_CORRECTION_90_DEGREES);
+            mMatcher.add(mInversionDetector90CW);
+
+            mInversionDetector90CCW = new PLLPhaseInversionDetector(FrameSync.P25_PHASE2_ERROR_90_CCW,
+                phaseLockedLoop, DEFAULT_SAMPLE_RATE, -FREQUENCY_PHASE_CORRECTION_90_DEGREES);
+            mMatcher.add(mInversionDetector90CCW);
+
+            mInversionDetector180 = new PLLPhaseInversionDetector(FrameSync.P25_PHASE2_ERROR_180,
+                phaseLockedLoop, DEFAULT_SAMPLE_RATE, FREQUENCY_PHASE_CORRECTION_180_DEGREES);
+            mMatcher.add(mInversionDetector180);
         }
     }
 
@@ -104,9 +104,9 @@ public class P25P2SyncDetector implements Listener<Dibit>
      */
     public void setSampleRate(double sampleRate)
     {
-//        mInversionDetector180.setSampleRate(sampleRate);
-//        mInversionDetector90CW.setSampleRate(sampleRate);
-//        mInversionDetector90CCW.setSampleRate(sampleRate);
+        mInversionDetector180.setSampleRate(sampleRate);
+        mInversionDetector90CW.setSampleRate(sampleRate);
+        mInversionDetector90CCW.setSampleRate(sampleRate);
     }
 
     /**

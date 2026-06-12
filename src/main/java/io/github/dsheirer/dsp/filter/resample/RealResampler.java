@@ -121,6 +121,14 @@ public class RealResampler
     }
 
     /**
+     * Flushes internal resampler buffers. Call when squelch closes to prevent residual noise from being output.
+     */
+    public void reset()
+    {
+        mBufferManager.reset();
+    }
+
+    /**
      * Buffer manager for input and output buffers used during the resampling process.
      */
     public class BufferManager implements SampleBuffers
@@ -149,6 +157,15 @@ public class RealResampler
         public void load(float[] samples)
         {
             mInputBuffer.put(samples);
+        }
+
+        /**
+         * Clears the input and output buffers, discarding any queued samples.
+         */
+        public void reset()
+        {
+            mInputBuffer.clear();
+            mOutputBuffer.clear();
         }
 
         @Override

@@ -92,6 +92,10 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         mNoiseSquelch.setSquelchStateListener(squelchState -> {
             if(squelchState == SquelchState.SQUELCH)
             {
+                if(mResampler != null)
+                {
+                    mResampler.reset();
+                }
                 notifyCallEnd();
             }
             else
