@@ -95,7 +95,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         float[] demodulated = mFMDemodulator.demodulate(filteredI, filteredQ);
 
-        float[] resampled = resample(demodulated, 50000.0, 24000.0);
+        float[] resampled = resample(demodulated, 50000.0, 48000.0);
 
         mSyncDetector.process(resampled, getMessageListener());
     }
@@ -121,7 +121,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         mLog.info("EDACS decoder sample rate: " + decimatedRate + " (decimation: " + decimation + ")");
 
-        mSyncDetector.setSampleRate(24000.0);
+        mSyncDetector.setSampleRate(48000.0);
     }
 
     public class SourceEventProcessor implements Listener<SourceEvent>
