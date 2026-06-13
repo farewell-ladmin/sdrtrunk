@@ -113,18 +113,20 @@ public class EDACSSyncDetector
             mDebugCount++;
         }
 
-        if(energy <= 0 || Math.abs(corr / energy) < 0.35) return;
+        if(energy <= 0 || Math.abs(corr / energy) < 0.35)
+        {
+            if(mLocked) { mMissCount++; if(mMissCount >= 12) { mLocked = false; mLog.info("EDACS sync lost"); } }
+            return;
+        }
+
+        if(mLocked) { mMissCount = 0; }
 
         int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
 
         CorrectedBinaryMessage data1 = softVote(dataStart, 0, 1);
         CorrectedBinaryMessage data2 = softVote(dataStart, 2, 3);
 
-        if(data1 == null && data2 == null)
-        {
-            if(mLocked) { mMissCount++; if(mMissCount >= 5) { mLocked = false; mLog.info("EDACS sync lost"); } }
-            return;
-        }
+        if(data1 == null && data2 == null) return;
 
         EDACSMessage message;
         if(data1 != null)
@@ -140,7 +142,11 @@ public class EDACSSyncDetector
         if(messageListener != null) messageListener.receive(message);
 
         if(mLocked) { mMissCount = 0; }
-        else { mLockCount++; if(mLockCount >= 2) { mLocked = true; mMissCount = 0; } }
+        else
+        {
+            mLockCount++;
+            if(mLockCount >= 3) { mLocked = true; mMissCount = 0; mLog.info("EDACS sync acquired"); }
+        }
     }
 
     private double correlation(int offset, long pattern, int bits)
