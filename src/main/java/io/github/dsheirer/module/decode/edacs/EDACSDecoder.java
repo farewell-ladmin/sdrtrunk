@@ -98,11 +98,6 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         float[] resampled = resample(demodulated, 50000.0, 24000.0);
 
         mSyncDetector.process(resampled, getMessageListener());
-
-        if(mSyncDetector.hasSync() && mDecoderStateEventListener != null)
-        {
-            mDecoderStateEventListener.receive(new DecoderStateEvent(this, DecoderStateEvent.Event.CONTINUATION, State.CONTROL));
-        }
     }
 
     private void setSampleRate(double sampleRate)

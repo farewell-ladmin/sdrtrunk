@@ -126,8 +126,8 @@ public class EDACSSyncDetector
 
         int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
 
-        CorrectedBinaryMessage data1 = decodeWord(dataStart, 0);
-        CorrectedBinaryMessage data2 = decodeWord(dataStart, 2);
+        CorrectedBinaryMessage data1 = readRawWord(dataStart, 0);
+        CorrectedBinaryMessage data2 = readRawWord(dataStart, 2);
 
         if(data1 == null && data2 == null) return;
 
@@ -161,7 +161,7 @@ public class EDACSSyncDetector
         return sum;
     }
 
-    private CorrectedBinaryMessage decodeWord(int dataStart, int wordNum)
+    private CorrectedBinaryMessage readRawWord(int dataStart, int wordNum)
     {
         CorrectedBinaryMessage word = new CorrectedBinaryMessage(WORD_BITS);
         for(int b = 0; b < WORD_BITS; b++)
@@ -169,8 +169,6 @@ public class EDACSSyncDetector
             int idx = (dataStart + wordNum * WORD_BITS + b) % mBuffer.length;
             if(mBuffer[idx] >= (float)mAfc) word.set(b);
         }
-        CorrectedBinaryMessage result = mBch.decodeCodeword(word);
-        if(result != null && result.getCorrectedBitCount() > 2) return null;
-        return result;
+        return mBch.decodeCodeword(word);
     }
 }
