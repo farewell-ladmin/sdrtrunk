@@ -21,6 +21,10 @@ sudo ln -s /opt/homebrew/Cellar/libusb/HEAD-9ceaa52/lib/libusb-1.0.0.dylib /opt/
 
 # sdrtrunk-vibes Fork
 
+This fork exists mostly so I could see if I could vibe code a fix for some specific P25P1/P2 bugs related to incorrect encryption detection I was having and implement NBFM fixes for the noise burst at the end. It turned into an extremely ambitious attempt to implement EDACS ProVoice which, so far, is not going well. 
+
+The NBFM fix works though it's entirely possible that was fixed already in the nightly. Testing is underway to see if the fixes to encryption detection work since the "fix" was apparently like two lines of code.
+
 ## EDACS Trunking (Experimental — Incomplete)
 
 **Status:** Control channel decoding works for Plan Bitmap, Site ID, and Adjacent Site messages. Group Call (talkgroup) decode is unreliable — BCH(40,28) false-passes dominate at our FM pipeline's bit error rate. Voice following and ProVoice audio are not implemented.
