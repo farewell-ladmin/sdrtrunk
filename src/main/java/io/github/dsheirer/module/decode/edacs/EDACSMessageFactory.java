@@ -76,8 +76,8 @@ public class EDACSMessageFactory
         }
         else if(mt1 == 0x19)
         {
-            int group = msg_1 & 0x1FFFF;
-            int source = msg_2 & 0x1FFFF;
+            int group = msg_1 & 0xFFFF;
+            int source = msg_2 & 0xFFFF;
             if(group == 0 || group > 65535 || source == 0 || source > 65535) return null;
             type = EDACSMessageType.STATUS;
             details.append("Login Group:").append(group).append(" Source:").append(source);
@@ -97,11 +97,11 @@ public class EDACSMessageFactory
                 case 0x03:
                 case 0x06:
                 {
-                    int lcn = (msg_1 >> 17) & 0x3F;
-                    int group = msg_1 & 0x1FFFF;
+                    int lcn = (msg_1 >> 17) & 0x1F;
+                    int group = msg_1 & 0xFFFF;
                     if(lcn == 0 || lcn > 32 || group == 0) return null;
                     type = EDACSMessageType.GROUP_CALL;
-                    int src = data2 != null ? (msg_2 & 0x1FFFF) : 0;
+                    int src = data2 != null ? (msg_2 & 0xFFFF) : 0;
                     boolean digital = (mt1 == 0x03);
                     details.append(String.format("%s Group Call TG:%d LCN:%d",
                         digital ? "Digital" : "Analog", group, lcn));

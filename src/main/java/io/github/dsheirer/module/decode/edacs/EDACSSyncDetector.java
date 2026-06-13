@@ -91,25 +91,9 @@ public class EDACSSyncDetector
         }
     }
 
-    private int mSyncLogCount = 0;
-    private int mSyncErrorSum = 0;
-
     private void decodeFrame(Listener<IMessage> messageListener)
     {
         int readPtr = (mWritePtr + mBuffer.length - FRAME_BITS) % mBuffer.length;
-
-        long syncCheck = 0;
-        for(int i = 0; i < SYNC_BITS; i++)
-            syncCheck = (syncCheck << 1) | (mBuffer[(readPtr + i) % mBuffer.length] ? 1 : 0);
-
-        int syncErrors = Long.bitCount(syncCheck ^ 0x555557125555L);
-        mSyncLogCount++;
-        mSyncErrorSum += syncErrors;
-        if(mSyncLogCount % 50 == 0)
-            mLog.info("EDACS sync avg errors: " + (mSyncErrorSum / mSyncLogCount) +
-                      " best: ? total: " + mSyncLogCount);
-        if(syncErrors > 16) return;
-
         int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
 
         CorrectedBinaryMessage[] words = new CorrectedBinaryMessage[4];
