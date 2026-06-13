@@ -31,6 +31,7 @@ import io.github.dsheirer.module.decode.ltrnet.DecodeConfigLTRNet;
 import io.github.dsheirer.module.decode.ltrstandard.DecodeConfigLTRStandard;
 import io.github.dsheirer.module.decode.mpt1327.DecodeConfigMPT1327;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
+import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25;
 import io.github.dsheirer.module.decode.passport.DecodeConfigPassport;
 import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
@@ -45,7 +46,8 @@ import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
     @JsonSubTypes.Type(value = DecodeConfigNBFM.class, name = "decodeConfigNBFM"),
     @JsonSubTypes.Type(value = DecodeConfigP25.class, name = "decodeConfigP25"),
     @JsonSubTypes.Type(value = DecodeConfigPassport.class, name = "decodeConfigPassport"),
-    @JsonSubTypes.Type(value = DecodeConfigDMR.class, name = "decodeConfigDMR")
+    @JsonSubTypes.Type(value = DecodeConfigDMR.class, name = "decodeConfigDMR"),
+    @JsonSubTypes.Type(value = DecodeConfigEDACS.class, name = "decodeConfigEDACS")
 })
 @JacksonXmlRootElement(localName = "decode_configuration")
 public abstract class DecodeConfiguration extends Configuration
