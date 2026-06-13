@@ -126,8 +126,8 @@ public class EDACSSyncDetector
 
         int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
 
-        CorrectedBinaryMessage data1 = softVote(dataStart, 0, 1);
-        CorrectedBinaryMessage data2 = softVote(dataStart, 2, 3);
+        CorrectedBinaryMessage data1 = decodeWord(dataStart, 0);
+        CorrectedBinaryMessage data2 = decodeWord(dataStart, 2);
 
         if(data1 == null && data2 == null) return;
 
@@ -161,27 +161,16 @@ public class EDACSSyncDetector
         return sum;
     }
 
-    private CorrectedBinaryMessage voteAndDecode(boolean[] w1, boolean[] w2)
+    private CorrectedBinaryMessage decodeWord(int dataStart, int wordNum)
     {
-        return mBch.decodeCodeword(toCBM(w1));
-    }
-
-    private CorrectedBinaryMessage softVote(int dataStart, int word0, int word1)
-    {
-        CorrectedBinaryMessage voted = new CorrectedBinaryMessage(WORD_BITS);
+        CorrectedBinaryMessage word = new CorrectedBinaryMessage(WORD_BITS);
         for(int b = 0; b < WORD_BITS; b++)
         {
-            float d0 = mBuffer[(dataStart + word0 * WORD_BITS + b) % mBuffer.length] - (float)mAfc;
-            float d1 = mBuffer[(dataStart + word1 * WORD_BITS + b) % mBuffer.length] - (float)mAfc;
-            voted.set(b, (d0 - d1) >= 0.0f);
+            int idx = (dataStart + wordNum * WORD_BITS + b) % mBuffer.length;
+            if(mBuffer[idx] >= (float)mAfc) word.set(b);
         }
-        return mBch.decodeCodeword(voted);
-    }
-
-    private CorrectedBinaryMessage toCBM(boolean[] bits)
-    {
-        CorrectedBinaryMessage cbm = new CorrectedBinaryMessage(bits.length);
-        for(int i = 0; i < bits.length; i++) cbm.set(i, bits[i]);
-        return cbm;
+        CorrectedBinaryMessage result = mBch.decodeCodeword(word);
+        if(result != null && result.getCorrectedBitCount() > 2) return null;
+        return result;
     }
 }

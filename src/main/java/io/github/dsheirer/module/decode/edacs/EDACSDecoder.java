@@ -39,6 +39,10 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
     private Listener<DecoderStateEvent> mDecoderStateEventListener;
     private final SourceEventProcessor mSourceEventProcessor = new SourceEventProcessor();
 
+    private float[] mResampleBuffer = new float[0];
+    private double mResamplePhase = 0;
+    private boolean mResampleReady = false;
+
     public EDACSDecoder()
     {
         mFMDemodulator = FmDemodulatorFactory.getFmDemodulator();
@@ -91,8 +95,9 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         float[] demodulated = mFMDemodulator.demodulate(filteredI, filteredQ);
 
-        //Feed to sync-frame detector (edacs-fm style)
-        mSyncDetector.process(demodulated, getMessageListener());
+        float[] resampled = resample(demodulated, 50000.0, 24000.0);
+
+        mSyncDetector.process(resampled, getMessageListener());
 
         if(mSyncDetector.hasSync() && mDecoderStateEventListener != null)
         {
@@ -121,7 +126,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         mLog.info("EDACS decoder sample rate: " + decimatedRate + " (decimation: " + decimation + ")");
 
-        mSyncDetector.setSampleRate(decimatedRate);
+        mSyncDetector.setSampleRate(24000.0);
     }
 
     public class SourceEventProcessor implements Listener<SourceEvent>
@@ -131,8 +136,36 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         {
             if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_SAMPLE_RATE_CHANGE)
             {
+                mResamplePhase = 0;
+                mResampleReady = false;
                 setSampleRate(sourceEvent.getValue().doubleValue());
             }
         }
+    }
+
+    private float[] resample(float[] input, double inputRate, double outputRate)
+    {
+        double step = outputRate / inputRate;
+        int estimateLen = (int)(input.length * step) + 2;
+        if(mResampleBuffer.length < estimateLen)
+            mResampleBuffer = new float[estimateLen];
+
+        int outIdx = 0;
+        for(int i = 0; i < input.length; i++)
+        {
+            mResamplePhase += step;
+            while(mResamplePhase >= 1.0)
+            {
+                mResamplePhase -= 1.0;
+                if(mResampleReady && outIdx < mResampleBuffer.length)
+                    mResampleBuffer[outIdx++] = input[i];
+                else
+                    mResampleReady = true;
+            }
+        }
+
+        float[] result = new float[outIdx];
+        System.arraycopy(mResampleBuffer, 0, result, 0, outIdx);
+        return result;
     }
 }
