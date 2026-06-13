@@ -26,6 +26,7 @@ public class EDACSMessageFactory
 
         EDACSMessageType type = EDACSMessageType.UNKNOWN;
         StringBuilder details = new StringBuilder();
+        int parsedGroup = 0;
 
         if(mt1 == 0x1F)
         {
@@ -101,6 +102,7 @@ public class EDACSMessageFactory
                     int group = msg_1 & 0xFFFF;
                     if(lcn == 0 || lcn > 32 || group == 0) return null;
                     type = EDACSMessageType.GROUP_CALL;
+                    parsedGroup = group;
                     int src = data2 != null ? (msg_2 & 0xFFFF) : 0;
                     boolean digital = (mt1 == 0x03);
                     details.append(String.format("%s Group Call TG:%d LCN:%d",
@@ -127,6 +129,7 @@ public class EDACSMessageFactory
         }
 
         EDACSMessage message = new EDACSMessage(type, data, timestamp);
+        message.setGroup(parsedGroup);
         message.setDetails(details.toString());
         return message;
     }

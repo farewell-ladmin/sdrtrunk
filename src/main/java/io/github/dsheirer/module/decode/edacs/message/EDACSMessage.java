@@ -17,6 +17,8 @@ public class EDACSMessage extends Message
     private EDACSMessageType mMessageType;
     private CorrectedBinaryMessage mData;
     private String mDetails;
+    private int mGroup;
+    private int mLCN;
 
     public EDACSMessage(EDACSMessageType messageType, CorrectedBinaryMessage data, long timestamp)
     {
@@ -24,6 +26,11 @@ public class EDACSMessage extends Message
         mMessageType = messageType;
         mData = data;
     }
+
+    public void setGroup(int group) { mGroup = group; }
+    public int getGroup() { return mGroup; }
+    public void setLCN(int lcn) { mLCN = lcn; }
+    public int getLCN() { return mLCN; }
 
     @Override
     public Protocol getProtocol()
