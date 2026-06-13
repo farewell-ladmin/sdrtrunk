@@ -12,24 +12,32 @@ public class EDACSSyncDetector
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSSyncDetector.class);
 
-    private static final long SYNC_FRAME = 0x555557125555L;
-    private static final long SYNC_MASK  = 0xFFFFFFFFFFFFL;
-    private static final int SYNC_MIN_BITS = 44; //Allow 4 bit errors out of 48
+    private static final int DOTTING_THRESHOLD = 14;
+    private static final int SYNC_BITS = 48;
+    private static final int WORD_BITS = 40;
+    private static final int FRAME_BITS = SYNC_BITS + 4 * WORD_BITS;
 
-    private long mSr0, mSr1, mSr2, mSr3, mSr4;
+    private boolean[] mBuffer = new boolean[FRAME_BITS + 80];
+    private int mWritePtr = 0;
+    private int mConsecutiveAlts = 0;
+    private boolean mLastBit;
+    private int mFramePending = 0;
 
     private BCH_40_28_EDACS mBch = new BCH_40_28_EDACS();
 
-    private double mSamplesPerSymbol = 5.0;
+    private double mSamplesPerSymbol = 2.6;
     private double mSampleAccum = 0;
     private float mDeviationSum = 0;
     private int mDeviationCount = 0;
 
-    private short[] mAfcHistory = new short[960];
-    private int mAfcHistoryPtr = 0;
-    private short mAfc = 0;
-    private int mSampleCount = 0;
-    private static final int AFC_WINDOW = 960;
+    private double mAfc = 0.0;
+    private static final double AFC_ALPHA = 0.0005;
+
+    private boolean mLocked = false;
+    private int mLockCount = 0;
+    private int mMissCount = 0;
+    private long mLastStatsTime = 0;
+    private int mMsgCount = 0;
 
     public void setSampleRate(double sampleRate)
     {
@@ -51,65 +59,77 @@ public class EDACSSyncDetector
             mDeviationSum = 0;
             mDeviationCount = 0;
 
-            short s = (short)(avgDeviation * 32767.0f);
-            mAfcHistory[mAfcHistoryPtr] = s;
-            mAfcHistoryPtr = (mAfcHistoryPtr + 1) % AFC_WINDOW;
-            mSampleCount++;
-            if(mSampleCount >= AFC_WINDOW)
+            mAfc = mAfc * (1.0 - AFC_ALPHA) + avgDeviation * AFC_ALPHA;
+
+            boolean bit = avgDeviation >= mAfc;
+
+            mBuffer[mWritePtr] = bit;
+            mWritePtr = (mWritePtr + 1) % mBuffer.length;
+
+            if(bit != mLastBit) { mConsecutiveAlts++; }
+            else { mConsecutiveAlts = 0; }
+            mLastBit = bit;
+
+            if(mFramePending > 0)
             {
-                mSampleCount = 0;
-                short min = Short.MAX_VALUE, max = Short.MIN_VALUE;
-                for(int i = 0; i < AFC_WINDOW; i++)
-                {
-                    if(mAfcHistory[i] < min) min = mAfcHistory[i];
-                    if(mAfcHistory[i] > max) max = mAfcHistory[i];
-                }
-                mAfc = (short)((min + max) / 2);
+                mFramePending--;
+                if(mFramePending == 0)
+                    decodeFrame(messageListener);
             }
 
-            boolean bit = s >= mAfc;
-
-            mSr0 = (mSr0 << 1) | ((mSr1 >>> 63) & 1);
-            mSr1 = (mSr1 << 1) | ((mSr2 >>> 63) & 1);
-            mSr2 = (mSr2 << 1) | ((mSr3 >>> 63) & 1);
-            mSr3 = (mSr3 << 1) | ((mSr4 >>> 63) & 1);
-            mSr4 = (mSr4 << 1) | (bit ? 1 : 0);
-
-            long masked = mSr0 & SYNC_MASK;
-            int errors = Long.bitCount(masked ^ SYNC_FRAME);
-            if(errors <= (48 - SYNC_MIN_BITS))
+            if(mConsecutiveAlts >= DOTTING_THRESHOLD && mFramePending <= 0)
             {
-                decodeFrame(messageListener);
+                mFramePending = FRAME_BITS;
+            }
+
+            if(System.currentTimeMillis() - mLastStatsTime > 10000)
+            {
+                mLog.info("EDACS dotting - locked: " + mLocked + " msgs: " + mMsgCount +
+                          " afc: " + String.format("%.4f", mAfc));
+                mLastStatsTime = System.currentTimeMillis();
             }
         }
     }
 
     private void decodeFrame(Listener<IMessage> messageListener)
     {
-        long fr1Raw = ((mSr0 & 0xFFFFL) << 24) | ((mSr1 & 0xFFFFFF0000000000L) >>> 40);
-        long fr4Raw = ((mSr2 & 0xFFFFFFL) << 16) | ((mSr3 & 0xFFFF000000000000L) >>> 48);
+        int readPtr = (mWritePtr + mBuffer.length - FRAME_BITS) % mBuffer.length;
+        int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
 
-        CorrectedBinaryMessage cbm1 = toCBM(fr1Raw, 40);
-        CorrectedBinaryMessage cbm4 = toCBM(fr4Raw, 40);
-
-        CorrectedBinaryMessage data1 = mBch.decodeCodeword(cbm1);
-        CorrectedBinaryMessage data4 = mBch.decodeCodeword(cbm4);
-
-        if(data1 != null || data4 != null)
+        CorrectedBinaryMessage[] words = new CorrectedBinaryMessage[4];
+        for(int w = 0; w < 4; w++)
         {
-            EDACSMessage message = EDACSMessageFactory.create(
-                data1 != null ? data1 : data4,
-                data1 != null && data4 != null ? data4 : null,
-                System.currentTimeMillis());
-            if(messageListener != null) messageListener.receive(message);
+            CorrectedBinaryMessage word = new CorrectedBinaryMessage(WORD_BITS);
+            for(int b = 0; b < WORD_BITS; b++)
+                if(mBuffer[(dataStart + w * WORD_BITS + b) % mBuffer.length])
+                    word.set(b);
+            words[w] = mBch.decodeCodeword(word);
         }
+
+        boolean gotMsg1 = words[0] != null || words[1] != null;
+        boolean gotMsg2 = words[2] != null || words[3] != null;
+
+        if(!gotMsg1 && !gotMsg2)
+        {
+            if(mLocked) { mMissCount++; if(mMissCount >= 5) { mLocked = false; mLog.info("EDACS sync lost"); } }
+            return;
+        }
+
+        mMsgCount++;
+
+        CorrectedBinaryMessage data1 = words[0] != null ? words[0] : words[1];
+        CorrectedBinaryMessage data2 = words[2] != null ? words[2] : words[3];
+
+        EDACSMessage message;
+        if(data1 != null)
+            message = EDACSMessageFactory.create(data1, data2, System.currentTimeMillis());
+        else
+            message = EDACSMessageFactory.create(data2, System.currentTimeMillis());
+
+        if(messageListener != null) messageListener.receive(message);
+
+        if(mLocked) { mMissCount = 0; }
+        else { mLockCount++; if(mLockCount >= 2) { mLocked = true; mMissCount = 0; } }
     }
 
-    private CorrectedBinaryMessage toCBM(long value, int bits)
-    {
-        CorrectedBinaryMessage cbm = new CorrectedBinaryMessage(bits);
-        for(int i = 0; i < bits; i++)
-            if((value & (1L << i)) != 0) cbm.set(bits - 1 - i);
-        return cbm;
-    }
 }
