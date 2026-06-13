@@ -25,9 +25,8 @@ public class EDACSMessageFactory
         int msg_1 = getInt(data, 0, 28);
         int msg_2 = data2 != null ? getInt(data2, 0, 28) : 0;
 
-        //Apply ESK mask — MBTA uses 0xA0
-        int eskMask = 0xA0;
-        int beforeMsk = msg_1;
+        //MBTA uses EA mode without ESK (verified with DSD-FME -fe)
+        int eskMask = 0x00;
         msg_1 = msg_1 ^ (eskMask << 20);
         if(data2 != null) msg_2 = msg_2 ^ (eskMask << 20);
 
@@ -40,7 +39,7 @@ public class EDACSMessageFactory
         EDACSMessageType type = EDACSMessageType.UNKNOWN;
         StringBuilder details = new StringBuilder();
 
-        if(mt1 == 0x0B)  //0x1F XOR 0xA0 at MT1 bits = 0x0B
+        if(mt1 == 0x1F)
         {
             switch(mt2)
             {
@@ -87,34 +86,34 @@ public class EDACSMessageFactory
         {
             switch(mt1)
             {
-                case 0x15: //0x01 ^ 0x14
+                case 0x01:
                     type = EDACSMessageType.GROUP_CALL;
                     details.append("TDMA Group Call");
                     break;
-                case 0x16: //0x02 ^ 0x14
+                case 0x02:
                     type = EDACSMessageType.STATUS;
                     details.append("Data Group Call");
                     break;
-                case 0x17: //0x03 ^ 0x14
-                case 0x12: //0x06 ^ 0x14
+                case 0x03:
+                case 0x06:
                 {
                     type = EDACSMessageType.GROUP_CALL;
                     int lcn = (msg_1 >> 17) & 0x1F;
                     int group = msg_1 & 0xFFFF;
-                    boolean digital = (mt1 == 0x17);
-                    details.append(String.format("%s Group Call TG:%d LCN:%d [%07X]", 
-                        digital ? "Digital" : "Analog", group, lcn, msg_1 & 0xFFFFFFF));
+                    boolean digital = (mt1 == 0x03);
+                    details.append(String.format("%s Group Call TG:%d LCN:%d",
+                        digital ? "Digital" : "Analog", group, lcn));
                     break;
                 }
-                case 0x04: //0x10 ^ 0x14
+                case 0x10:
                     type = EDACSMessageType.INDIVIDUAL_CALL;
                     details.append("I-Call");
                     break;
-                case 0x06: //0x12 ^ 0x14
+                case 0x12:
                     type = EDACSMessageType.STATUS;
                     details.append("Channel Assignment");
                     break;
-                case 0x02: //0x16 ^ 0x14
+                case 0x16:
                     type = EDACSMessageType.ALL_CALL;
                     details.append("All-Call");
                     break;
