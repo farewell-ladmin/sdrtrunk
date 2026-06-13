@@ -43,14 +43,11 @@ sudo ln -s /opt/homebrew/Cellar/libusb/HEAD-9ceaa52/lib/libusb-1.0.0.dylib /opt/
 
 ### Root Cause
 
-DSD-FME decodes the same MBTA signal perfectly at 48000 sps using rtl_fm's FM demodulator. The sdrtrunk FM demodulation pipeline (channelizer + scalar FmDemodulator at 50000 sps) produces lower-quality bits. BCH(40,28) can only correct 2 errors per 40-bit word — our BER is ~15% (~6 errors). Plan Bitmap survives because its all-1s pattern is robust to bit errors; Group Calls have varied bit patterns that don't survive BCH.
+DSD-FME decodes the same signal perfectly at 48000 sps using rtl_fm's FM demodulator. The sdrtrunk FM demodulation pipeline (channelizer + scalar FmDemodulator at 50000 sps) produces lower-quality bits. BCH(40,28) can only correct 2 errors per 40-bit word — our BER is ~15% (~6 errors). Plan Bitmap survives because its all-1s pattern is robust to bit errors; Group Calls have varied bit patterns that don't survive BCH.
 
-### Known MBTA Talkgroups (from RadioReference)
-
-273 Red Line Dispatcher, 280 Red Cabot Yard, 289 Orange Dispatcher, 296 Orange Wellington Yard, 305 Green Line Dispatcher, 528–537 Bus Operations, 545–546 Maintenance, 1091 Signals, 1105 Radio Techs
 
 ### Reference
-- DSD-FME source at `M:\OpenCode\dsd-fme\dsd-fme\`
+- DSD-FME source
 - `.\dsd-fme.exe -fe -i rtl:0:853.725M:424:-1:24:0:2 -o null -Z`
 
 ## Other Fork Changes
