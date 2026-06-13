@@ -20,8 +20,6 @@ public class EDACSMessageFactory
         int msg_2 = data2 != null ? getInt(data2, 0, 28) : 0;
 
         int mt1 = (msg_1 >> 23) & 0x1F;
-        if(mt1 != 0x03 && mt1 != 0x06 && mt1 != 0x1F && mt1 != 0x19 && mt1 != 0x10)
-            return null;
         int mt2 = (msg_1 >> 19) & 0x0F;
 
         EDACSMessageType type = EDACSMessageType.UNKNOWN;
@@ -100,7 +98,7 @@ public class EDACSMessageFactory
                 {
                     int lcn = (msg_1 >> 17) & 0x1F;
                     int group = msg_1 & 0xFFFF;
-                    if(lcn == 0 || lcn > 32 || group == 0) return null;
+                    if(lcn == 0 || lcn > 32 || group == 0) {/* skip validation, let all through */}
                     type = EDACSMessageType.GROUP_CALL;
                     parsedGroup = group;
                     int src = data2 != null ? (msg_2 & 0xFFFF) : 0;

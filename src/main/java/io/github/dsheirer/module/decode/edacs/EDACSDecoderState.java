@@ -4,19 +4,16 @@ import io.github.dsheirer.channel.state.DecoderState;
 import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.DecoderStateEvent.Event;
 import io.github.dsheirer.channel.state.State;
-import io.github.dsheirer.identifier.IdentifierClass;
-import io.github.dsheirer.identifier.talkgroup.EDACSTalkgroup;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.IMessageListener;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
-import io.github.dsheirer.module.decode.event.DecodeEvent;
-import io.github.dsheirer.module.decode.event.DecodeEventType;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class EDACSDecoderState extends DecoderState implements IMessageListener
 {
-    private EDACSTalkgroup mCurrentTalkgroup;
-    private DecodeEvent mCurrentCallEvent;
+    private final static Logger mLog = LoggerFactory.getLogger(EDACSDecoderState.class);
 
     public EDACSDecoderState()
     {
@@ -31,53 +28,24 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
     @Override
     public void receive(IMessage message)
     {
-        if(message == null || !message.isValid())
-            return;
-
-        if(message instanceof EDACSMessage edacs)
+        if(message.isValid())
         {
-            if(edacs.getMessageType() == EDACSMessageType.GROUP_CALL)
+            if(message instanceof EDACSMessage edacs)
             {
-                int group = edacs.getGroup();
-                if(group <= 0 || group > 65535)
+                if(edacs.getMessageType() == EDACSMessageType.GROUP_CALL ||
+                   edacs.getMessageType() == EDACSMessageType.INDIVIDUAL_CALL ||
+                   edacs.getMessageType() == EDACSMessageType.ALL_CALL)
                 {
-                    broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
-                    return;
-                }
-
-                EDACSTalkgroup tg = EDACSTalkgroup.create(group);
-
-                if(mCurrentTalkgroup == null || !mCurrentTalkgroup.equals(tg))
-                {
-                    if(mCurrentCallEvent != null)
-                        mCurrentCallEvent.end(message.getTimestamp());
-
-                    mCurrentTalkgroup = tg;
-                    getIdentifierCollection().remove(IdentifierClass.USER);
-                    getIdentifierCollection().update(tg);
-
-                    mCurrentCallEvent = DecodeEvent.builder(DecodeEventType.CALL, message.getTimestamp())
-                        .identifiers(getIdentifierCollection().copyOf())
-                        .details(edacs.getDetails())
-                        .build();
+                    broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
                 }
                 else
                 {
-                    mCurrentCallEvent.update(message.getTimestamp());
+                    broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
                 }
-
-                broadcast(mCurrentCallEvent);
-                broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
             }
             else
             {
-                if(mCurrentCallEvent != null)
-                {
-                    mCurrentCallEvent.end(message.getTimestamp());
-                    mCurrentCallEvent = null;
-                    mCurrentTalkgroup = null;
-                }
-                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
+                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.IDLE));
             }
         }
     }
@@ -102,8 +70,11 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
     public void reset()
     {
         super.reset();
-        mCurrentTalkgroup = null;
-        mCurrentCallEvent = null;
+        resetState();
+    }
+
+    protected void resetState()
+    {
         super.resetState();
     }
 }

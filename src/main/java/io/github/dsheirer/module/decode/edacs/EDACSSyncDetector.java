@@ -104,24 +104,6 @@ public class EDACSSyncDetector
     {
         int readPtr = (mWritePtr + mBuffer.length - FRAME_BITS) % mBuffer.length;
 
-        float center = (float)mAfc;
-        double corr = correlation(readPtr, SYNC_WORD, SYNC_BITS);
-        double energy = 0;
-        for(int i = 0; i < SYNC_BITS; i++)
-            energy += Math.abs(mBuffer[(readPtr + i) % mBuffer.length] - center);
-
-        if(mDebugCount < 1)
-        {
-            float maxD = 0, minD = 0;
-            for(int i = 0; i < FRAME_BITS; i++) { float d = mBuffer[(readPtr + i) % mBuffer.length]; if(d > maxD) maxD = d; if(d < minD) minD = d; }
-            mLog.info("EDACS corr=" + String.format("%.3f", corr) + " ratio=" + String.format("%.3f", Math.abs(corr/energy)) +
-                      " devMax=" + String.format("%.4f", maxD) + " devMin=" + String.format("%.4f", minD));
-            mDebugCount++;
-        }
-
-        if(energy <= 0 || Math.abs(corr / energy) < 0.35) return;
-
-        mLastSyncTime = System.currentTimeMillis();
         if(mLocked) { mMissCount = 0; }
 
         int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
