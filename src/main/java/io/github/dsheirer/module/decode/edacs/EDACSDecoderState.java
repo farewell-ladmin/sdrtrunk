@@ -7,12 +7,14 @@ import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.IMessageListener;
 import io.github.dsheirer.module.decode.DecoderType;
-import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
 
 public class EDACSDecoderState extends DecoderState implements IMessageListener
 {
+    private long mLastControlTime;
+
     public EDACSDecoderState()
     {
+        mLastControlTime = System.currentTimeMillis();
     }
 
     @Override
@@ -26,8 +28,15 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
     {
         if(message != null && message.isValid())
         {
+            mLastControlTime = System.currentTimeMillis();
             broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
         }
+    }
+
+    public void signalDetected()
+    {
+        mLastControlTime = System.currentTimeMillis();
+        broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
     }
 
     @Override
@@ -50,6 +59,7 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
     public void reset()
     {
         super.reset();
+        mLastControlTime = System.currentTimeMillis();
         super.resetState();
     }
 }

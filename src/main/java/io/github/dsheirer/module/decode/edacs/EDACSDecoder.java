@@ -2,6 +2,7 @@ package io.github.dsheirer.module.decode.edacs;
 
 import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.IDecoderStateEventProvider;
+import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.dsp.filter.FilterFactory;
 import io.github.dsheirer.dsp.filter.decimate.DecimationFilterFactory;
 import io.github.dsheirer.dsp.filter.decimate.IRealDecimationFilter;
@@ -92,6 +93,11 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         //Feed to sync-frame detector (edacs-fm style)
         mSyncDetector.process(demodulated, getMessageListener());
+
+        if(mSyncDetector.hasSync() && mDecoderStateEventListener != null)
+        {
+            mDecoderStateEventListener.receive(new DecoderStateEvent(this, DecoderStateEvent.Event.CONTINUATION, State.CONTROL));
+        }
     }
 
     private void setSampleRate(double sampleRate)

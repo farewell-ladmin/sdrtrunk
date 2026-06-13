@@ -93,6 +93,12 @@ public class EDACSSyncDetector
     }
 
     private int mDebugCount = 0;
+    private long mLastSyncTime = 0;
+
+    public boolean hasSync()
+    {
+        return System.currentTimeMillis() - mLastSyncTime < 5000;
+    }
 
     private void decodeFrame(Listener<IMessage> messageListener)
     {
@@ -113,12 +119,9 @@ public class EDACSSyncDetector
             mDebugCount++;
         }
 
-        if(energy <= 0 || Math.abs(corr / energy) < 0.35)
-        {
-            if(mLocked) { mMissCount++; if(mMissCount >= 12) { mLocked = false; mLog.info("EDACS sync lost"); } }
-            return;
-        }
+        if(energy <= 0 || Math.abs(corr / energy) < 0.35) return;
 
+        mLastSyncTime = System.currentTimeMillis();
         if(mLocked) { mMissCount = 0; }
 
         int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
@@ -142,11 +145,7 @@ public class EDACSSyncDetector
         if(messageListener != null) messageListener.receive(message);
 
         if(mLocked) { mMissCount = 0; }
-        else
-        {
-            mLockCount++;
-            if(mLockCount >= 3) { mLocked = true; mMissCount = 0; mLog.info("EDACS sync acquired"); }
-        }
+        else { mLockCount++; if(mLockCount >= 3) { mLocked = true; mMissCount = 0; } }
     }
 
     private double correlation(int offset, long pattern, int bits)
