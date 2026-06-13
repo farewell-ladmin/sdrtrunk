@@ -12,12 +12,13 @@ public class EDACSSyncDetector
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSSyncDetector.class);
 
+    private static final long SYNC_WORD = 0x555557125555L;
     private static final int DOTTING_THRESHOLD = 14;
     private static final int SYNC_BITS = 48;
     private static final int WORD_BITS = 40;
     private static final int FRAME_BITS = SYNC_BITS + 4 * WORD_BITS;
 
-    private boolean[] mBuffer = new boolean[FRAME_BITS + 80];
+    private float[] mBuffer = new float[FRAME_BITS + 80];
     private int mWritePtr = 0;
     private int mConsecutiveAlts = 0;
     private boolean mLastBit;
@@ -60,9 +61,10 @@ public class EDACSSyncDetector
             mDeviationCount = 0;
 
             mAfc = mAfc * (1.0 - AFC_ALPHA) + avgDeviation * AFC_ALPHA;
+
             boolean bit = avgDeviation >= mAfc;
 
-            mBuffer[mWritePtr] = bit;
+            mBuffer[mWritePtr] = avgDeviation;
             mWritePtr = (mWritePtr + 1) % mBuffer.length;
 
             if(bit != mLastBit) { mConsecutiveAlts++; }
@@ -83,23 +85,35 @@ public class EDACSSyncDetector
 
             if(System.currentTimeMillis() - mLastStatsTime > 10000)
             {
-                mLog.info("EDACS dotting - locked: " + mLocked + " msgs: " + mMsgCount +
+                mLog.info("EDACS - locked: " + mLocked + " msgs: " + mMsgCount +
                           " afc: " + String.format("%.4f", mAfc));
                 mLastStatsTime = System.currentTimeMillis();
             }
         }
     }
 
+    private int mDebugCount = 0;
+
     private void decodeFrame(Listener<IMessage> messageListener)
     {
         int readPtr = (mWritePtr + mBuffer.length - FRAME_BITS) % mBuffer.length;
 
-        long syncCheck = 0;
+        float center = (float)mAfc;
+        double corr = correlation(readPtr, SYNC_WORD, SYNC_BITS);
+        double energy = 0;
         for(int i = 0; i < SYNC_BITS; i++)
-            syncCheck = (syncCheck << 1) | (mBuffer[(readPtr + i) % mBuffer.length] ? 1 : 0);
+            energy += Math.abs(mBuffer[(readPtr + i) % mBuffer.length] - center);
 
-        int syncErrors = Long.bitCount(syncCheck ^ 0x555557125555L);
-        if(syncErrors > 8) return;
+        if(mDebugCount < 1)
+        {
+            float maxD = 0, minD = 0;
+            for(int i = 0; i < FRAME_BITS; i++) { float d = mBuffer[(readPtr + i) % mBuffer.length]; if(d > maxD) maxD = d; if(d < minD) minD = d; }
+            mLog.info("EDACS corr=" + String.format("%.3f", corr) + " ratio=" + String.format("%.3f", Math.abs(corr/energy)) +
+                      " devMax=" + String.format("%.4f", maxD) + " devMin=" + String.format("%.4f", minD));
+            mDebugCount++;
+        }
+
+        if(energy <= 0 || Math.abs(corr / energy) < 0.5) return;
 
         int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
 
@@ -108,21 +122,15 @@ public class EDACSSyncDetector
         {
             CorrectedBinaryMessage word = new CorrectedBinaryMessage(WORD_BITS);
             for(int b = 0; b < WORD_BITS; b++)
-                if(mBuffer[(dataStart + w * WORD_BITS + b) % mBuffer.length])
-                    word.set(b);
-            words[w] = word;
+            {
+                int idx = (dataStart + w * WORD_BITS + b) % mBuffer.length;
+                if(mBuffer[idx] >= center) word.set(b);
+            }
+            words[w] = mBch.decodeCodeword(word);
         }
 
-        CorrectedBinaryMessage decoded1 = null;
-        if(words[0] != null)
-            decoded1 = mBch.decodeCodeword(words[0]);
-
-        CorrectedBinaryMessage decoded2 = null;
-        if(words[2] != null)
-            decoded2 = mBch.decodeCodeword(words[2]);
-
-        boolean gotMsg1 = decoded1 != null;
-        boolean gotMsg2 = decoded2 != null;
+        boolean gotMsg1 = words[0] != null || words[1] != null;
+        boolean gotMsg2 = words[2] != null || words[3] != null;
 
         if(!gotMsg1 && !gotMsg2)
         {
@@ -130,8 +138,8 @@ public class EDACSSyncDetector
             return;
         }
 
-        CorrectedBinaryMessage data1 = decoded1;
-        CorrectedBinaryMessage data2 = decoded2;
+        CorrectedBinaryMessage data1 = words[0] != null ? words[0] : words[1];
+        CorrectedBinaryMessage data2 = words[2] != null ? words[2] : words[3];
 
         EDACSMessage message;
         if(data1 != null)
@@ -144,11 +152,22 @@ public class EDACSSyncDetector
         if(message == null) return;
 
         mMsgCount++;
-
         if(messageListener != null) messageListener.receive(message);
 
         if(mLocked) { mMissCount = 0; }
         else { mLockCount++; if(mLockCount >= 2) { mLocked = true; mMissCount = 0; } }
     }
 
+    private double correlation(int offset, long pattern, int bits)
+    {
+        double sum = 0;
+        float center = (float)mAfc;
+        for(int i = 0; i < bits; i++)
+        {
+            boolean patternBit = ((pattern >> (bits - 1 - i)) & 1) != 0;
+            float sample = mBuffer[(offset + i) % mBuffer.length] - center;
+            sum += patternBit ? -sample : sample;
+        }
+        return sum;
+    }
 }
