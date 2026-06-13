@@ -60,7 +60,6 @@ public class EDACSSyncDetector
             mDeviationCount = 0;
 
             mAfc = mAfc * (1.0 - AFC_ALPHA) + avgDeviation * AFC_ALPHA;
-
             boolean bit = avgDeviation >= mAfc;
 
             mBuffer[mWritePtr] = bit;
@@ -94,6 +93,14 @@ public class EDACSSyncDetector
     private void decodeFrame(Listener<IMessage> messageListener)
     {
         int readPtr = (mWritePtr + mBuffer.length - FRAME_BITS) % mBuffer.length;
+
+        long syncCheck = 0;
+        for(int i = 0; i < SYNC_BITS; i++)
+            syncCheck = (syncCheck << 1) | (mBuffer[(readPtr + i) % mBuffer.length] ? 1 : 0);
+
+        int syncErrors = Long.bitCount(syncCheck ^ 0x555557125555L);
+        if(syncErrors > 8) return;
+
         int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
 
         CorrectedBinaryMessage[] words = new CorrectedBinaryMessage[4];
@@ -103,11 +110,19 @@ public class EDACSSyncDetector
             for(int b = 0; b < WORD_BITS; b++)
                 if(mBuffer[(dataStart + w * WORD_BITS + b) % mBuffer.length])
                     word.set(b);
-            words[w] = mBch.decodeCodeword(word);
+            words[w] = word;
         }
 
-        boolean gotMsg1 = words[0] != null || words[1] != null;
-        boolean gotMsg2 = words[2] != null || words[3] != null;
+        CorrectedBinaryMessage decoded1 = null;
+        if(words[0] != null)
+            decoded1 = mBch.decodeCodeword(words[0]);
+
+        CorrectedBinaryMessage decoded2 = null;
+        if(words[2] != null)
+            decoded2 = mBch.decodeCodeword(words[2]);
+
+        boolean gotMsg1 = decoded1 != null;
+        boolean gotMsg2 = decoded2 != null;
 
         if(!gotMsg1 && !gotMsg2)
         {
@@ -115,14 +130,16 @@ public class EDACSSyncDetector
             return;
         }
 
-        CorrectedBinaryMessage data1 = words[0] != null ? words[0] : words[1];
-        CorrectedBinaryMessage data2 = words[2] != null ? words[2] : words[3];
+        CorrectedBinaryMessage data1 = decoded1;
+        CorrectedBinaryMessage data2 = decoded2;
 
         EDACSMessage message;
         if(data1 != null)
             message = EDACSMessageFactory.create(data1, data2, System.currentTimeMillis());
-        else
+        else if(data2 != null)
             message = EDACSMessageFactory.create(data2, System.currentTimeMillis());
+        else
+            return;
 
         if(message == null) return;
 
