@@ -94,6 +94,12 @@ public class EDACSSyncDetector
     private void decodeFrame(Listener<IMessage> messageListener)
     {
         int readPtr = (mWritePtr + mBuffer.length - FRAME_BITS) % mBuffer.length;
+
+        long syncCheck = 0;
+        for(int i = 0; i < SYNC_BITS; i++)
+            syncCheck = (syncCheck << 1) | (mBuffer[(readPtr + i) % mBuffer.length] ? 1 : 0);
+
+        if(Long.bitCount(syncCheck ^ 0x555557125555L) > 12) return;
         int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
 
         CorrectedBinaryMessage[] words = new CorrectedBinaryMessage[4];
@@ -115,8 +121,6 @@ public class EDACSSyncDetector
             return;
         }
 
-        mMsgCount++;
-
         CorrectedBinaryMessage data1 = words[0] != null ? words[0] : words[1];
         CorrectedBinaryMessage data2 = words[2] != null ? words[2] : words[3];
 
@@ -125,6 +129,10 @@ public class EDACSSyncDetector
             message = EDACSMessageFactory.create(data1, data2, System.currentTimeMillis());
         else
             message = EDACSMessageFactory.create(data2, System.currentTimeMillis());
+
+        if(message == null) return;
+
+        mMsgCount++;
 
         if(messageListener != null) messageListener.receive(message);
 

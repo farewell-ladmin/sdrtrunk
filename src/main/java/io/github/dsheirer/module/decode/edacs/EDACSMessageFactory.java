@@ -5,12 +5,6 @@ import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * EDACS Extended Addressing (EA) message parser.
- *
- * Parses 28-bit EDACS data payloads from BCH-corrected message words.
- * Based on dsd-fme's EDACS EA message parsing.
- */
 public class EDACSMessageFactory
 {
     private static final Logger mLog = LoggerFactory.getLogger(EDACSMessageFactory.class);
@@ -25,16 +19,10 @@ public class EDACSMessageFactory
         int msg_1 = getInt(data, 0, 28);
         int msg_2 = data2 != null ? getInt(data2, 0, 28) : 0;
 
-        //MBTA uses EA mode without ESK (verified with DSD-FME -fe)
-        int eskMask = 0x00;
-        msg_1 = msg_1 ^ (eskMask << 20);
-        if(data2 != null) msg_2 = msg_2 ^ (eskMask << 20);
-
         int mt1 = (msg_1 >> 23) & 0x1F;
+        if(mt1 != 0x03 && mt1 != 0x06 && mt1 != 0x1F && mt1 != 0x19 && mt1 != 0x10)
+            return null;
         int mt2 = (msg_1 >> 19) & 0x0F;
-
-        //Log first message to verify ESK is applied
-        //mLog.info("EDACS msg raw=" + Integer.toHexString(beforeMsk) + " mt1=" + mt1 + " (" + ((beforeMsk >> 23) & 0x1F) + " before XOR)");
 
         EDACSMessageType type = EDACSMessageType.UNKNOWN;
         StringBuilder details = new StringBuilder();
@@ -49,7 +37,9 @@ public class EDACSMessageFactory
                     break;
                 case 0x1:
                     type = EDACSMessageType.ADJACENT_SITE;
-                    details.append("Adjacent Site");
+                    int adjSite = msg_2 & 0xFF;
+                    int adjLcn = msg_1 & 0x1F;
+                    details.append("Adjacent Site LCN:").append(adjLcn).append(" Idx:").append(adjSite);
                     break;
                 case 0x4:
                     type = EDACSMessageType.STATUS;
@@ -63,7 +53,7 @@ public class EDACSMessageFactory
                     type = EDACSMessageType.SYSTEM_INFO;
                     int ccLcn = msg_2 & 0x1F;
                     int systemId = msg_1 & 0xFFFF;
-                    details.append("CC LCN:").append(ccLcn).append(" SYS:").append(Integer.toHexString(systemId));
+                    details.append("CC LCN:").append(ccLcn).append(" SYS:").append(String.format("%04X", systemId));
                     break;
                 case 0xA:
                     type = EDACSMessageType.SYSTEM_INFO;
@@ -82,13 +72,20 @@ public class EDACSMessageFactory
                     break;
             }
         }
+        else if(mt1 == 0x19)
+        {
+            type = EDACSMessageType.STATUS;
+            int group = msg_1 & 0x1FFFF;
+            int source = msg_2 & 0x1FFFF;
+            details.append("Login Group:").append(group).append(" Source:").append(source);
+        }
         else
         {
             switch(mt1)
             {
                 case 0x01:
                     type = EDACSMessageType.GROUP_CALL;
-                    details.append("TDMA Group Call");
+                    details.append("Group Call MT1:01");
                     break;
                 case 0x02:
                     type = EDACSMessageType.STATUS;
@@ -97,12 +94,15 @@ public class EDACSMessageFactory
                 case 0x03:
                 case 0x06:
                 {
+                    int lcn = (msg_1 >> 17) & 0x3F;
+                    int group = msg_1 & 0x1FFFF;
+                    if(lcn == 0 || lcn > 32 || group == 0) return null;
                     type = EDACSMessageType.GROUP_CALL;
-                    int lcn = (msg_1 >> 17) & 0x1F;
-                    int group = msg_1 & 0xFFFF;
+                    int src = data2 != null ? (msg_2 & 0x1FFFF) : 0;
                     boolean digital = (mt1 == 0x03);
                     details.append(String.format("%s Group Call TG:%d LCN:%d",
                         digital ? "Digital" : "Analog", group, lcn));
+                    if(src > 0) details.append(" Src:").append(src);
                     break;
                 }
                 case 0x10:
@@ -118,7 +118,7 @@ public class EDACSMessageFactory
                     details.append("All-Call");
                     break;
                 default:
-                    details.append(String.format("MT1:%d [%07X]", mt1, msg_1 & 0xFFFFFFF));
+                    details.append(String.format("MT1:%02X [%07X]", mt1, msg_1 & 0xFFFFFFF));
                     break;
             }
         }
