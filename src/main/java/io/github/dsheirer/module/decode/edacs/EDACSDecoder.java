@@ -97,7 +97,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
     private void setSampleRate(double sampleRate)
     {
         int decimation = 1;
-        while((sampleRate / decimation) >= 48000)
+        while((sampleRate / decimation) >= 96000)
         {
             decimation *= 2;
         }
@@ -107,7 +107,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         double decimatedRate = sampleRate / decimation;
 
-        float[] coefficients = FilterFactory.getLowPass(decimatedRate, 5000, 7000, 60,
+        float[] coefficients = FilterFactory.getLowPass(decimatedRate, 9600, 12000, 60,
                 io.github.dsheirer.dsp.window.WindowType.HAMMING, true);
 
         mIBasebandFilter = FilterFactory.getRealFilter(coefficients);

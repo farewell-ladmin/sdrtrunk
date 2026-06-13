@@ -113,7 +113,7 @@ public class EDACSSyncDetector
             mDebugCount++;
         }
 
-        if(energy <= 0 || Math.abs(corr / energy) < 0.5) return;
+        if(energy <= 0 || Math.abs(corr / energy) < 0.35) return;
 
         int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
 
