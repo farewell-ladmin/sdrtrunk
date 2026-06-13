@@ -19,7 +19,50 @@ Finally, create a symbolic link from the installed library to the place where us
 sudo ln -s /opt/homebrew/Cellar/libusb/HEAD-9ceaa52/lib/libusb-1.0.0.dylib /opt/local/lib/libusb-1.0.0.dylib
 ```
 
-# sdrtrunk
+# sdrtrunk-vibes Fork
+
+## EDACS Trunking (Experimental — Incomplete)
+
+**Status:** Control channel decoding works for Plan Bitmap, Site ID, and Adjacent Site messages. Group Call (talkgroup) decode is unreliable — BCH(40,28) false-passes dominate at our FM pipeline's bit error rate. Voice following and ProVoice audio are not implemented.
+
+### What Was Tried
+
+| Approach | Result |
+|----------|--------|
+| Dotting-based burst detection with integrator AFC | Control channel locks, 2000+ msgs/10s, mostly garbage |
+| 48-bit sync frame detector (exact match) | Too strict at current BER |
+| 48-bit sync frame detector (relaxed 44/48) | Produced some real TGs (289, 296) but low rate |
+| Correlation-based sync validation (0.35–0.73 ratio) | Plan Bitmap passes, Group Calls don't |
+| Resampling to 24000 sps (matching DSD-FME RTL rate) | 71.5% correlation ratio achieved |
+| Resampling to 48000 sps (DSD-FME's internal rate) | Not enough samples per symbol |
+| Soft voter combining inverted copy deviations | No improvement |
+| 3-copy majority voting (matches DSD-FME edacs-fme.c) | More selective but still garbage |
+| FM gain multiplier (2x) | No improvement |
+| Zero-crossing symbol timing recovery | Produces real bits but timing drifts |
+| Jitter-based clock recovery (from dsd_symbol.c) | Requires exact 5.0 sps alignment |
+
+### Root Cause
+
+DSD-FME decodes the same MBTA signal perfectly at 48000 sps using rtl_fm's FM demodulator. The sdrtrunk FM demodulation pipeline (channelizer + scalar FmDemodulator at 50000 sps) produces lower-quality bits. BCH(40,28) can only correct 2 errors per 40-bit word — our BER is ~15% (~6 errors). Plan Bitmap survives because its all-1s pattern is robust to bit errors; Group Calls have varied bit patterns that don't survive BCH.
+
+### Known MBTA Talkgroups (from RadioReference)
+
+273 Red Line Dispatcher, 280 Red Cabot Yard, 289 Orange Dispatcher, 296 Orange Wellington Yard, 305 Green Line Dispatcher, 528–537 Bus Operations, 545–546 Maintenance, 1091 Signals, 1105 Radio Techs
+
+### Reference
+- DSD-FME source at `M:\OpenCode\dsd-fme\dsd-fme\`
+- `.\dsd-fme.exe -fe -i rtl:0:853.725M:424:-1:24:0:2 -o null -Z`
+
+## Other Fork Changes
+
+- P25P1 encryption detection hysteresis
+- NBFM squelch tail hold-off
+- P25P2 phase inversion detectors
+- Single-instance lock (dev mode only)
+- ESS processor memory reuse
+- Auto-start / JMBe compatibility
+
+
 A cross-platform java application for decoding, monitoring, recording and streaming trunked mobile and related radio protocols using Software Defined Radios (SDR).
 
 * [Help/Wiki Home Page](https://github.com/DSheirer/sdrtrunk/wiki)
