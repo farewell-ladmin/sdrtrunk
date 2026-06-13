@@ -12,122 +12,102 @@ public class EDACSSyncDetector
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSSyncDetector.class);
 
+    private static final long SYNC_WORD = 0x555557125555L;
     private static final int DOTTING_THRESHOLD = 14;
     private static final int SYNC_BITS = 48;
     private static final int WORD_BITS = 40;
-    private static final int DATA_BITS = 6 * WORD_BITS;
-    private static final int FRAME_BITS = SYNC_BITS + DATA_BITS;
+    private static final int FRAME_BITS = SYNC_BITS + 6 * WORD_BITS;
 
-    private float[] mSymbols;
-    private int mSymWrite = 0;
-    private int mSymCount = 0;
-
+    private float[] mBuffer = new float[FRAME_BITS + 80];
+    private int mWritePtr = 0;
     private int mConsecutiveAlts = 0;
     private boolean mLastBit;
     private int mFramePending = 0;
 
+    private static final float FM_GAIN = 2.0f;
+
     private EDACSVoter mVoter = new EDACSVoter();
+    private static final int DATA_BITS = 6 * WORD_BITS;
+
+    private double mSamplesPerSymbol = 2.6;
+    private double mSampleAccum = 0;
+    private float mDeviationSum = 0;
+    private int mDeviationCount = 0;
 
     private double mAfc = 0.0;
     private static final double AFC_ALPHA = 0.0005;
 
-    //Zero-crossing tracking
-    private float mLastDev;
-    private float mCrossDevSum;
-    private int mCrossDevCount;
-    private int mTicksSinceCross;
-    private int mLastCrossTicks;
-
     private boolean mLocked = false;
     private int mLockCount = 0;
+    private int mMissCount = 0;
     private long mLastStatsTime = 0;
     private int mMsgCount = 0;
 
     public void setSampleRate(double sampleRate)
     {
-        mAfc = 0;
-        mLastDev = 0;
-        mTicksSinceCross = 0;
-        mLastCrossTicks = 0;
-        mCrossDevSum = 0;
-        mCrossDevCount = 0;
-        mSymWrite = 0;
-        mSymCount = 0;
-        int bufSize = FRAME_BITS + 60;
-        mSymbols = new float[bufSize];
+        mSamplesPerSymbol = sampleRate / 9600.0;
+        mSampleAccum = 0;
     }
 
     public void process(float[] demodulated, Listener<IMessage> messageListener)
     {
-        for(int i = 0; i < demodulated.length; i++)
+        for(float sample : demodulated)
         {
-            float sample = demodulated[i];
             mAfc = mAfc * (1.0 - AFC_ALPHA) + sample * AFC_ALPHA;
+
             float dev = sample - (float)mAfc;
+            mDeviationSum += dev;
+            mDeviationCount++;
+            mSampleAccum += 1.0;
+            if(mSampleAccum < mSamplesPerSymbol) continue;
+            mSampleAccum -= mSamplesPerSymbol;
 
-            mCrossDevSum += dev;
-            mCrossDevCount++;
-            mTicksSinceCross++;
+            float avgDeviation = (mDeviationSum / mDeviationCount) * FM_GAIN;
+            mDeviationSum = 0;
+            mDeviationCount = 0;
 
-            boolean crossed = (mLastDev < 0 && dev >= 0) || (mLastDev > 0 && dev <= 0);
-            mLastDev = dev;
+            boolean bit = avgDeviation >= 0;
 
-            if(crossed && mCrossDevCount > 1)
+            mBuffer[mWritePtr] = avgDeviation;
+            mWritePtr = (mWritePtr + 1) % mBuffer.length;
+
+            if(bit != mLastBit) { mConsecutiveAlts++; }
+            else { mConsecutiveAlts = 0; }
+            mLastBit = bit;
+
+            if(mFramePending > 0)
             {
-                int period = mLastCrossTicks + mTicksSinceCross;
+                mFramePending--;
+                if(mFramePending == 0)
+                    decodeFrame(messageListener);
+            }
 
-                if(mLastCrossTicks > 0 && period > 0)
-                {
-                    float symbol = mCrossDevSum / mCrossDevCount;
-
-                    mSymbols[mSymWrite % mSymbols.length] = symbol;
-                    mSymWrite++;
-
-                    boolean bit = symbol >= 0;
-
-                    if(bit != mLastBit) { mConsecutiveAlts++; }
-                    else { mConsecutiveAlts = 0; }
-                    mLastBit = bit;
-
-                    if(mFramePending > 0)
-                    {
-                        mFramePending--;
-                        if(mFramePending == 0)
-                            decodeFrame(messageListener);
-                    }
-
-                    if(mConsecutiveAlts >= DOTTING_THRESHOLD && mFramePending <= 0)
-                    {
-                        mFramePending = FRAME_BITS - DOTTING_THRESHOLD;
-                    }
-                }
-
-                mLastCrossTicks = mTicksSinceCross;
-                mTicksSinceCross = 0;
-                mCrossDevSum = 0;
-                mCrossDevCount = 0;
+            if(mConsecutiveAlts >= DOTTING_THRESHOLD && mFramePending <= 0)
+            {
+                mFramePending = FRAME_BITS - DOTTING_THRESHOLD;
             }
 
             if(System.currentTimeMillis() - mLastStatsTime > 10000)
             {
-                float maxD = 0, minD = 0;
-                for(int j = Math.max(0, mSymWrite - 100); j < mSymWrite && j < mSymbols.length; j++)
-                {
-                    if(mSymbols[j] > maxD) maxD = mSymbols[j];
-                    if(mSymbols[j] < minD) minD = mSymbols[j];
-                }
                 mLog.info("EDACS - locked: " + mLocked + " msgs: " + mMsgCount +
-                          " afc: " + String.format("%.4f", mAfc) + " devMax=" + String.format("%.4f", maxD) +
-                          " devMin=" + String.format("%.4f", minD));
+                          " afc: " + String.format("%.4f", mAfc));
                 mLastStatsTime = System.currentTimeMillis();
             }
         }
     }
 
+    private int mDebugCount = 0;
+    private long mLastSyncTime = 0;
+
+    public boolean hasSync()
+    {
+        return System.currentTimeMillis() - mLastSyncTime < 5000;
+    }
+
     private void decodeFrame(Listener<IMessage> messageListener)
     {
-        int readPtr = (mSymWrite + mSymbols.length - FRAME_BITS) % mSymbols.length;
-        int dataStart = (readPtr + SYNC_BITS) % mSymbols.length;
+        int readPtr = (mWritePtr + mBuffer.length - FRAME_BITS) % mBuffer.length;
+        int dataStart = (readPtr + SYNC_BITS) % mBuffer.length;
 
         CorrectedBinaryMessage[] words = new CorrectedBinaryMessage[6];
         for(int w = 0; w < 6; w++)
@@ -135,8 +115,8 @@ public class EDACSSyncDetector
             CorrectedBinaryMessage word = new CorrectedBinaryMessage(WORD_BITS);
             for(int b = 0; b < WORD_BITS; b++)
             {
-                int idx = (dataStart + w * WORD_BITS + b) % mSymbols.length;
-                if(mSymbols[idx] >= 0) word.set(b);
+                int idx = (dataStart + w * WORD_BITS + b) % mBuffer.length;
+                if(mBuffer[idx] >= 0) word.set(b);
             }
             words[w] = word;
         }
@@ -156,6 +136,22 @@ public class EDACSSyncDetector
         if(message == null) return;
 
         if(messageListener != null) messageListener.receive(message);
-        if(!mLocked) { mLockCount++; if(mLockCount >= 3) { mLocked = true; } }
+
+        if(mLocked) {}
+        else { mLockCount++; if(mLockCount >= 3) { mLocked = true; } }
     }
+
+    private double correlation(int offset, long pattern, int bits)
+    {
+        double sum = 0;
+        float center = (float)mAfc;
+        for(int i = 0; i < bits; i++)
+        {
+            boolean patternBit = ((pattern >> (bits - 1 - i)) & 1) != 0;
+            float sample = mBuffer[(offset + i) % mBuffer.length] - center;
+            sum += patternBit ? -sample : sample;
+        }
+        return sum;
+    }
+
 }
