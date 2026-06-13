@@ -50,9 +50,11 @@ public class EDACSMessageFactory
                     details.append("Unit Enable/Disable");
                     break;
                 case 0x8:
-                    type = EDACSMessageType.SYSTEM_INFO;
                     int ccLcn = msg_2 & 0x1F;
                     int systemId = msg_1 & 0xFFFF;
+                    if(ccLcn == 0 || ccLcn > 15) return null;
+                    if(ccLcn == 0 || ccLcn > 15) return null;
+                    type = EDACSMessageType.SYSTEM_INFO;
                     details.append("CC LCN:").append(ccLcn).append(" SYS:").append(String.format("%04X", systemId));
                     break;
                 case 0xA:
@@ -74,9 +76,10 @@ public class EDACSMessageFactory
         }
         else if(mt1 == 0x19)
         {
-            type = EDACSMessageType.STATUS;
             int group = msg_1 & 0x1FFFF;
             int source = msg_2 & 0x1FFFF;
+            if(group == 0 || group > 65535 || source == 0 || source > 65535) return null;
+            type = EDACSMessageType.STATUS;
             details.append("Login Group:").append(group).append(" Source:").append(source);
         }
         else
