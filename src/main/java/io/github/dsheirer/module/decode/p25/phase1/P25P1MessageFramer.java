@@ -282,8 +282,6 @@ public class P25P1MessageFramer
         if(mMessageAssembler != null)
         {
             mMessageAssembler.forceCompletion(mPreviousDataUnitID, mDetectedDataUnitID);
-            adjustDibitCounterFromMessageAssembler();
-            dispatchSyncLoss(mMessageAssembler.getMessage().currentSize());
             mMessageAssembler = null;
         }
     }
