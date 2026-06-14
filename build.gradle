@@ -58,10 +58,10 @@ repositories {
 //Version is defined in gradle.properties so that we can CLI override it for nightly builds.
 version = project.findProperty('projectVersion')
 
-//Java 24 is required for this version of the Project Panama preview/incubator feature
+//Java 26 is required for this version of the Project Panama preview/incubator feature
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(25)
+        languageVersion = JavaLanguageVersion.of(26)
     }
 }
 
@@ -131,6 +131,7 @@ def os = org.gradle.nativeplatform.platform.internal.DefaultNativePlatform.curre
 tasks.withType(JavaCompile) {
     options.compilerArgs.add("--enable-preview") //Project Panama Vector API is still in incubator
     options.compilerArgs.add("--add-modules=jdk.incubator.vector") //Project Panama Vector API is still in incubator
+    options.compilerArgs.add("--add-modules=javafx.base,javafx.controls,javafx.fxml,javafx.graphics,javafx.media,javafx.swing,javafx.web")
 }
 
 /**
@@ -168,6 +169,12 @@ application {
     else {
         applicationDefaultJvmArgs = jvmArgsLinux
     }
+}
+
+//Local development run task: constrain heap to avoid runaway JVM growth during testing.
+//These limits apply to ./gradlew run only — NOT to release distributions.
+tasks.named('run') {
+    jvmArgs += ['-Xms256m', '-Xmx1g', '-Dsdrtrunk.dev=true']
 }
 
 test {
@@ -219,17 +226,17 @@ String targetWindowsAarch64 = 'windows-aarch64-v' + version
  * author's development environment, but can be changed to your environment if you want to use this build pattern.
  */
 String jdk_base = '/home/denny/java_jdks/'
-String jdk_linux_aarch64 = jdk_base + 'linux-arm64/jdk-25.0.1-full'
-String jdk_linux_x86_64 = jdk_base + 'linux-x64/jdk-25.0.1-full'
-String jdk_osx_x86_64 = jdk_base + 'osx-x64/jdk-25.0.1-full.jdk'
-String jdk_osx_aarch64 = jdk_base + 'osx-arm64/jdk-25.0.1-full.jdk'
-String jdk_windows_x86_64 = jdk_base + 'windows-x64/jdk-25.0.1-full'
-String jdk_windows_aarch64 = jdk_base + 'windows-arm64/jdk-25.0.1-full'
+String jdk_linux_aarch64 = jdk_base + 'linux-arm64/jdk-26.0.1-full'
+String jdk_linux_x86_64 = jdk_base + 'linux-x64/jdk-26.0.1-full'
+String jdk_osx_x86_64 = jdk_base + 'osx-x64/jdk-26.0.1-full.jdk'
+String jdk_osx_aarch64 = jdk_base + 'osx-arm64/jdk-26.0.1-full.jdk'
+String jdk_windows_x86_64 = jdk_base + 'windows-x64/jdk-26.0.1-full'
+String jdk_windows_aarch64 = jdk_base + 'windows-arm64/jdk-26.0.1-full'
 
 /**
  * Download URLs to download the JDK as part of the gradle build packaging process
  */
-def jdk_download_base = "https://download.bell-sw.com/java/25.0.1+11/bellsoft-jdk25.0.1+11-"
+def jdk_download_base = "https://download.bell-sw.com/java/26.0.1+10/bellsoft-jdk26.0.1+10-"
 def jdk_download_suffix = "-full.tar.gz"
 def jdk_download_linux_aarch64 = jdk_download_base + "linux-aarch64" + jdk_download_suffix
 def jdk_download_linux_x86_64 = jdk_download_base + "linux-amd64" + jdk_download_suffix
