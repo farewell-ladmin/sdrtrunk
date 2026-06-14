@@ -123,15 +123,11 @@ public class P25P1MessageFramer
      */
     public void syncDetected()
     {
-        //If a stale assembler exists from a previous message that was never completed (e.g. due to
-        //sync loss mid-assembly), force-complete and dispatch it before accepting the new sync.
-        if(mMessageAssembler != null)
+        if(mMessageAssembler == null)
         {
-            dispatchStaleAssembler();
+            mSyncDetected = true;
+            mNIDPointer = 0;
         }
-
-        mSyncDetected = true;
-        mNIDPointer = 0;
     }
 
     /**
@@ -186,6 +182,13 @@ public class P25P1MessageFramer
                 {
                     mMessageAssembler.receive(symbol);
                 }
+            }
+            else if(mDibitCounter >= 4800)
+            {
+                //Force-complete and dispatch a stale assembly that has been accumulating dibits for >1 second.
+                mMessageAssembler.forceCompletion(mPreviousDataUnitID, mDetectedDataUnitID);
+                dispatchMessage();
+                mDibitCounter = 0;
             }
             else
             {
@@ -270,18 +273,6 @@ public class P25P1MessageFramer
         }
         else
         {
-            mMessageAssembler = null;
-        }
-    }
-
-    /**
-     * Force-completes and disposes a stale message assembler that was left incomplete due to sync loss.
-     */
-    private void dispatchStaleAssembler()
-    {
-        if(mMessageAssembler != null)
-        {
-            mMessageAssembler.forceCompletion(mPreviousDataUnitID, mDetectedDataUnitID);
             mMessageAssembler = null;
         }
     }
