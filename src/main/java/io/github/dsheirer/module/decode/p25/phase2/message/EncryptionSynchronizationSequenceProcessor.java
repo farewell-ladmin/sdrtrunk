@@ -25,7 +25,6 @@ import io.github.dsheirer.edac.ReedSolomon_44_16_29_P25;
 import io.github.dsheirer.module.decode.p25.phase2.timeslot.AbstractVoiceTimeslot;
 import io.github.dsheirer.module.decode.p25.phase2.timeslot.Voice2Timeslot;
 import io.github.dsheirer.module.decode.p25.phase2.timeslot.Voice4Timeslot;
-import java.util.Arrays;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -52,9 +51,6 @@ public class EncryptionSynchronizationSequenceProcessor
     private int mEssBCounter = 1;
     private int mTimeslot;
     private long mTimestamp;
-    private int[] mInput = new int[63];
-    private int[] mOutput = new int[63];
-    private ReedSolomon_44_16_29_P25 mReedSolomon = new ReedSolomon_44_16_29_P25();
 
     /**
      * Constructs an instance
@@ -124,20 +120,21 @@ public class EncryptionSynchronizationSequenceProcessor
         {
             //We have to reverse the order of the information hexbits and the RS parity hexbits in the array for
             //the RS algorithm.
-            Arrays.fill(mInput, 0);
+            int[] input = new int[63];
+            int[] output = new int[63];
 
             int inputPointer = 0;
 
             for(int x = 27; x >= 0; x--)
             {
-                mInput[inputPointer++] = mESSA.getInt(x * 6, x * 6 + 5);
+                input[inputPointer++] = mESSA.getInt(x * 6, x * 6 + 5);
             }
 
             if(mESSB4 != null)
             {
                 for(int x = 3; x >= 0; x--)
                 {
-                    mInput[inputPointer++] = mESSB4.getInt(x * 6, x * 6 + 5);
+                    input[inputPointer++] = mESSB4.getInt(x * 6, x * 6 + 5);
                 }
             }
             else
@@ -149,7 +146,7 @@ public class EncryptionSynchronizationSequenceProcessor
             {
                 for(int x = 3; x >= 0; x--)
                 {
-                    mInput[inputPointer++] = mESSB3.getInt(x * 6, x * 6 + 5);
+                    input[inputPointer++] = mESSB3.getInt(x * 6, x * 6 + 5);
                 }
             }
             else
@@ -161,7 +158,7 @@ public class EncryptionSynchronizationSequenceProcessor
             {
                 for(int x = 3; x >= 0; x--)
                 {
-                    mInput[inputPointer++] = mESSB2.getInt(x * 6, x * 6 + 5);
+                    input[inputPointer++] = mESSB2.getInt(x * 6, x * 6 + 5);
                 }
             }
             else
@@ -173,11 +170,12 @@ public class EncryptionSynchronizationSequenceProcessor
             {
                 for(int x = 3; x >= 0; x--)
                 {
-                    mInput[inputPointer++] = mESSB1.getInt(x * 6, x * 6 + 5);
+                    input[inputPointer++] = mESSB1.getInt(x * 6, x * 6 + 5);
                 }
             }
 
-            boolean irrecoverableErrors = mReedSolomon.decode(mInput, mOutput);
+            ReedSolomon_44_16_29_P25 rs = new ReedSolomon_44_16_29_P25();
+            boolean irrecoverableErrors = rs.decode(input, output);
 
             if(!irrecoverableErrors)
             {
@@ -188,9 +186,9 @@ public class EncryptionSynchronizationSequenceProcessor
 
                 for(int x = 43; x >= 28; x--)
                 {
-                    if(mOutput[x] != -1)
+                    if(output[x] != -1)
                     {
-                        message.load(pointer, 6, mOutput[x]);
+                        message.load(pointer, 6, output[x]);
                     }
 
                     pointer += 6;
