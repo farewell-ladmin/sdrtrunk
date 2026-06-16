@@ -10,19 +10,23 @@ import java.util.List;
 public class MotorolaTypeIIMessageFactory
 {
     private static final int CMD_IDLE = 0x2F8;
-    private static final int CMD_ANALOG_GRANT = 0x308;
     private static final int CMD_GROUP_BUSY = 0x300;
+    private static final int CMD_PRIVATE_BUSY = 0x302;
     private static final int CMD_EMERGENCY_BUSY = 0x303;
+    private static final int CMD_ANALOG_GRANT = 0x308;
+    private static final int CMD_DIGITAL_GRANT = 0x321;
+    private static final int CMD_SYSTEM_INFO = 0x320;
+    private static final int CMD_INTERCONNECT_REJECT = 0x324;
     private static final int CMD_SEND_AFFILIATION = 0x32A;
     private static final int CMD_SYSTEM_ID = 0x32B;
     private static final int CMD_ROAMING = 0x32C;
-    private static final int CMD_INTERCONNECT_REJECT = 0x324;
-    private static final int CMD_DIGITAL_GRANT = 0x321;
+    private static final int CMD_BSI = 0x3A0;
     private static final int CMD_NETWORK_STATUS = 0x3BF;
     private static final int CMD_SYSTEM_STATUS = 0x3C0;
-    private static final int CMD_BSI = 0x3A0;
-    private static final int CMD_SYSTEM_INFO = 0x320;
 
+    private static final int CMD2_DYNAMIC_REGROUP = 0x30A;
+    private static final int CMD2_SYSTEM_ID_CC = 0x30B;
+    private static final int CMD2_STATUS_ACK = 0x30D;
     private static final int CMD2_AFFILIATION = 0x310;
     private static final int CMD2_MESSAGE = 0x311;
     private static final int CMD2_PRIVATE_CALL_RING_ENC = 0x315;
@@ -34,15 +38,20 @@ public class MotorolaTypeIIMessageFactory
     private static final int CMD2_DATE_TIME = 0x322;
     private static final int CMD2_EMERGENCY_PTT = 0x32E;
     private static final int CMD2_PATCH = 0x340;
-    private static final int CMD2_DYNAMIC_REGROUP = 0x30A;
-    private static final int CMD2_SYSTEM_ID_CC = 0x30B;
-    private static final int CMD2_STATUS_ACK = 0x30D;
-    private static final int CMD2_PRIVATE_BUSY = 0x302;
 
     private static final int ADDR_CC_BROADCAST_MASK = 0xFF00;
     private static final int ADDR_CC_BROADCAST_VALUE = 0x1F00;
-    private static final int ADDR_ADJACENT_MASK = 0x6000;
-    private static final int ADDR_ALT_CC_MASK = 0x2800;
+    private static final int ADDR_ADJACENT_MASK = 0xFC00;
+    private static final int ADDR_ADJACENT_VALUE = 0x6000;
+    private static final int ADDR_ALT_CC_MASK = 0xFC00;
+    private static final int ADDR_ALT_CC_VALUE = 0x2800;
+
+    private static final int ADDR_RADIO_CHECK = 0x261B;
+    private static final int ADDR_DEAFFILIATION = 0x261C;
+    private static final int ADDR_STATUS_ACK_MIN = 0x26E0;
+    private static final int ADDR_STATUS_ACK_MAX = 0x26E7;
+    private static final int ADDR_EMERGENCY_ACK = 0x26E8;
+    private static final int ADDR_PATCH_CANCEL = 0x2021;
 
     public static List<MotorolaTypeIIMessage> process(OswQueue queue, Bandplan bandplan)
     {
@@ -61,9 +70,9 @@ public class MotorolaTypeIIMessageFactory
         OswEntry osw1 = queue.getMiddle();
         OswEntry osw0 = queue.getOldest();
 
-        if(osw2.command == CMD_IDLE && !osw2.isGroup)
+        if(isIdle(osw2))
         {
-            if(osw1.command == CMD_IDLE && !osw1.isGroup)
+            if(isIdle(osw1))
             {
                 queue.removeNewest();
                 queue.removeNewest();
@@ -75,71 +84,108 @@ public class MotorolaTypeIIMessageFactory
             return messages;
         }
 
-        if(osw2.command == CMD_ANALOG_GRANT && osw1.command == CMD_ANALOG_GRANT &&
-           osw0.command == CMD2_SYSTEM_ID_CC && (osw0.address & ADDR_ADJACENT_MASK) == ADDR_ADJACENT_MASK)
+        if(osw0.command == CMD_ANALOG_GRANT && osw1.command == CMD_SYSTEM_INFO &&
+           osw2.command == CMD2_SYSTEM_ID_CC)
         {
-            messages.add(createMessage(MotorolaTypeIIMessageType.ADJACENT_SITE, osw2, true));
+            return processThreeOswSystem(queue, osw0, osw1, osw2);
+        }
+
+        if(osw1.command == CMD_ANALOG_GRANT)
+        {
+            return processAnalogGrant(queue, osw1, osw2);
+        }
+
+        if(osw1.command == CMD_DIGITAL_GRANT)
+        {
+            return processDigitalGrant(queue, osw1, osw2);
+        }
+
+        if(osw2.command == CMD_ANALOG_GRANT && isIdle(osw1))
+        {
             queue.removeNewest();
             queue.removeNewest();
-            queue.removeNewest();
+            queue.add(osw2);
             return messages;
         }
 
-        if(osw2.command == CMD_SYSTEM_INFO)
+        if(osw2.command == CMD_DIGITAL_GRANT && isIdle(osw1))
         {
-            messages.add(createMessage(MotorolaTypeIIMessageType.SYSTEM_INFO, osw2, true));
             queue.removeNewest();
             queue.removeNewest();
-            queue.removeNewest();
+            queue.add(osw2);
             return messages;
-        }
-
-        if(osw2.command == CMD_ANALOG_GRANT)
-        {
-            return processAnalogGrant(queue, osw2, osw1);
-        }
-
-        if(osw2.command == CMD_DIGITAL_GRANT)
-        {
-            return processDigitalGrant(queue, osw2, osw1);
         }
 
         return processOneOsw(queue, osw2);
     }
 
-    private static List<MotorolaTypeIIMessage> processAnalogGrant(OswQueue queue, OswEntry osw2, OswEntry osw1)
+    private static List<MotorolaTypeIIMessage> processThreeOswSystem(OswQueue queue, OswEntry osw0,
+                                                                       OswEntry osw1, OswEntry osw2)
     {
         List<MotorolaTypeIIMessage> messages = new ArrayList<>();
 
-        if(osw1.command == CMD_IDLE && !osw1.isGroup)
+        if((osw2.address & ADDR_ADJACENT_MASK) == ADDR_ADJACENT_VALUE)
         {
+            messages.add(createMessage(MotorolaTypeIIMessageType.ADJACENT_SITE, osw0.address,
+                osw2.isGroup, osw0.command, osw2.address));
+        }
+        else
+        {
+            messages.add(createMessage(MotorolaTypeIIMessageType.SYSTEM_INFO, osw0.address,
+                true, osw0.command, osw2.address));
+        }
+
+        queue.removeNewest();
+        queue.removeNewest();
+        queue.removeNewest();
+        return messages;
+    }
+
+    private static List<MotorolaTypeIIMessage> processAnalogGrant(OswQueue queue, OswEntry first, OswEntry second)
+    {
+        List<MotorolaTypeIIMessage> messages = new ArrayList<>();
+
+        // OP25: first OSW (older) has channel + talkgroup, second OSW (newer) has source RID
+        if(first.isChannel() && first.isGroup && first.address != 0 && second.address != 0)
+        {
+            messages.add(createGrantMessage(MotorolaTypeIIMessageType.ANALOG_GROUP_GRANT,
+                first.address, true, first.command, first.address & 0x3FF, second.address));
             queue.removeNewest();
             queue.removeNewest();
-            queue.add(osw2);
             return messages;
         }
 
-        if(osw1.isChannel() && osw1.isGroup)
+        if(first.isChannel() && !first.isGroup && first.address != 0 && second.address != 0)
         {
-            messages.add(createGrantMessage(MotorolaTypeIIMessageType.ANALOG_GROUP_GRANT, osw2, osw1, true));
+            messages.add(createGrantMessage(MotorolaTypeIIMessageType.ANALOG_PRIVATE_CALL,
+                first.address, false, first.command, first.address & 0x3FF, second.address));
             queue.removeNewest();
             queue.removeNewest();
             return messages;
         }
 
-        if(osw1.isChannel() && !osw1.isGroup)
+        if(first.isChannel() && !first.isGroup && (first.address & ADDR_CC_BROADCAST_MASK) == ADDR_CC_BROADCAST_VALUE)
         {
-            messages.add(createGrantMessage(MotorolaTypeIIMessageType.ANALOG_PRIVATE_CALL, osw2, osw1, false));
+            messages.add(createMessage(MotorolaTypeIIMessageType.SYSTEM_ID_CC, second.address,
+                false, second.command, first.address & 0x3FF));
             queue.removeNewest();
             queue.removeNewest();
             return messages;
         }
 
-        MotorolaTypeIIMessageType subType = mapAnalogSubCommand(osw1.command);
+        if(isIdle(second))
+        {
+            queue.removeNewest();
+            queue.removeNewest();
+            queue.add(first);
+            return messages;
+        }
+
+        MotorolaTypeIIMessageType subType = mapAnalogSubCommand(first, second);
 
         if(subType != null)
         {
-            messages.add(createMessage(subType, osw2, osw2.isGroup));
+            messages.add(createMessage(subType, first.address, first.isGroup, first.command, second.address));
             queue.removeNewest();
             queue.removeNewest();
             return messages;
@@ -148,152 +194,281 @@ public class MotorolaTypeIIMessageFactory
         return messages;
     }
 
-    private static List<MotorolaTypeIIMessage> processDigitalGrant(OswQueue queue, OswEntry osw2, OswEntry osw1)
+    private static List<MotorolaTypeIIMessage> processDigitalGrant(OswQueue queue, OswEntry first, OswEntry second)
     {
         List<MotorolaTypeIIMessage> messages = new ArrayList<>();
 
-        if(osw1.command == CMD_IDLE && !osw1.isGroup)
+        // OP25: first OSW (older) has channel + talkgroup, second OSW (newer) has source RID
+        if(first.isChannel() && first.isGroup && second.isGroup && first.address != 0)
         {
-            queue.removeNewest();
-            queue.removeNewest();
-            queue.add(osw2);
-            return messages;
-        }
-
-        if(osw1.isChannel() && osw1.isGroup)
-        {
-            messages.add(createGrantMessage(MotorolaTypeIIMessageType.DIGITAL_GROUP_GRANT, osw2, osw1, true));
+            messages.add(createGrantMessage(MotorolaTypeIIMessageType.DIGITAL_GROUP_GRANT,
+                first.address, true, first.command, first.address & 0x3FF, second.address));
             queue.removeNewest();
             queue.removeNewest();
             return messages;
         }
 
-        if(osw1.isChannel() && !osw1.isGroup)
+        if(first.isChannel() && !first.isGroup && first.address != 0 && second.address != 0)
         {
-            messages.add(createGrantMessage(MotorolaTypeIIMessageType.DIGITAL_PRIVATE_CALL, osw2, osw1, false));
+            messages.add(createGrantMessage(MotorolaTypeIIMessageType.DIGITAL_PRIVATE_CALL,
+                first.address, false, first.command, first.address & 0x3FF, second.address));
             queue.removeNewest();
             queue.removeNewest();
             return messages;
+        }
+
+        if(isIdle(second))
+        {
+            queue.removeNewest();
+            queue.removeNewest();
+            queue.add(first);
+            return messages;
+        }
+
+        if(!first.isGroup && !second.isGroup)
+        {
+            MotorolaTypeIIMessageType ringType = mapDigitalSubCommand(second.command);
+            if(ringType != null)
+            {
+                messages.add(createMessage(ringType, first.address, false, first.command, second.address));
+                queue.removeNewest();
+                queue.removeNewest();
+                return messages;
+            }
         }
 
         return messages;
     }
 
-    private static List<MotorolaTypeIIMessage> processOneOsw(OswQueue queue, OswEntry osw2)
+    private static MotorolaTypeIIMessageType mapAnalogSubCommand(OswEntry first, OswEntry second)
+    {
+        switch(second.command)
+        {
+            case CMD2_DYNAMIC_REGROUP:
+                if(!first.isGroup && !second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.DYNAMIC_REGROUP;
+                }
+                return null;
+            case CMD2_SYSTEM_ID_CC:
+                return mapSystemIdCC(first, second);
+            case CMD2_STATUS_ACK:
+                if(!first.isGroup && !second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.STATUS_ACK;
+                }
+                return null;
+            case CMD2_AFFILIATION:
+                if(!first.isGroup && !second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.AFFILIATION;
+                }
+                return null;
+            case CMD2_MESSAGE:
+                if(!first.isGroup && !second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.MESSAGE;
+                }
+                return null;
+            case CMD2_PRIVATE_CALL_RING_ENC:
+            case CMD2_PRIVATE_CALL_RING_CLR:
+            case CMD2_PRIVATE_CALL_RING_ACK:
+                if(!first.isGroup && !second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.PRIVATE_CALL_RING;
+                }
+                return null;
+            case CMD2_CALL_ALERT:
+                if(!first.isGroup && !second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.CALL_ALERT;
+                }
+                return null;
+            case CMD2_CALL_ALERT_ACK:
+                if(!first.isGroup && !second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.CALL_ALERT_ACK;
+                }
+                return null;
+            case CMD2_OMNILINK_TRESPASS:
+                if(!first.isGroup && !second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.OMNILINK_TRESPASS;
+                }
+                return null;
+            case CMD2_DATE_TIME:
+                if(first.isGroup && second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.DATE_TIME;
+                }
+                return null;
+            case CMD2_EMERGENCY_PTT:
+                if(first.isGroup && second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.EMERGENCY_PTT;
+                }
+                return null;
+            case CMD2_PATCH:
+                if(first.isGroup && second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.PATCH;
+                }
+                return null;
+            case CMD_GROUP_BUSY:
+                if(second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.GROUP_BUSY_QUEUED;
+                }
+                return null;
+            case CMD_PRIVATE_BUSY:
+                if(!second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.PRIVATE_CALL_BUSY;
+                }
+                return null;
+            case CMD_EMERGENCY_BUSY:
+                if(second.isGroup)
+                {
+                    return MotorolaTypeIIMessageType.EMERGENCY_BUSY_QUEUED;
+                }
+                return null;
+            default:
+                return null;
+        }
+    }
+
+    private static MotorolaTypeIIMessageType mapSystemIdCC(OswEntry first, OswEntry second)
+    {
+        if((second.address & ADDR_ALT_CC_MASK) == ADDR_ALT_CC_VALUE && second.isGroup)
+        {
+            return MotorolaTypeIIMessageType.SYSTEM_ID_CC;
+        }
+
+        if((second.address & ADDR_ADJACENT_MASK) == ADDR_ADJACENT_VALUE)
+        {
+            return MotorolaTypeIIMessageType.ADJACENT_SITE;
+        }
+
+        if(!first.isGroup && !second.isGroup)
+        {
+            if(second.address == ADDR_RADIO_CHECK)
+            {
+                return MotorolaTypeIIMessageType.RADIO_CHECK;
+            }
+            if(second.address == ADDR_DEAFFILIATION)
+            {
+                return MotorolaTypeIIMessageType.DEAFFILIATION;
+            }
+            if(second.address >= ADDR_STATUS_ACK_MIN && second.address <= ADDR_STATUS_ACK_MAX)
+            {
+                return MotorolaTypeIIMessageType.STATUS_ACK;
+            }
+        }
+
+        if(first.isGroup && second.isGroup)
+        {
+            if(second.address == ADDR_PATCH_CANCEL)
+            {
+                return MotorolaTypeIIMessageType.PATCH;
+            }
+        }
+
+        return MotorolaTypeIIMessageType.SYSTEM_ID_CC;
+    }
+
+    private static MotorolaTypeIIMessageType mapDigitalSubCommand(int command)
+    {
+        switch(command)
+        {
+            case CMD2_PRIVATE_CALL_RING_ENC:
+            case CMD2_PRIVATE_CALL_RING_CLR:
+            case CMD2_PRIVATE_CALL_RING_ACK:
+                return MotorolaTypeIIMessageType.PRIVATE_CALL_RING;
+            default:
+                return null;
+        }
+    }
+
+    private static List<MotorolaTypeIIMessage> processOneOsw(OswQueue queue, OswEntry osw)
     {
         List<MotorolaTypeIIMessage> messages = new ArrayList<>();
         MotorolaTypeIIMessageType type = null;
 
-        if(osw2.isChannel() && osw2.isGroup)
+        if(osw.isChannel() && osw.isGroup)
         {
             type = MotorolaTypeIIMessageType.GROUP_UPDATE;
         }
-        else if((osw2.address & ADDR_CC_BROADCAST_MASK) == ADDR_CC_BROADCAST_VALUE && !osw2.isGroup)
+        else if(!osw.isGroup && (osw.address & ADDR_CC_BROADCAST_MASK) == ADDR_CC_BROADCAST_VALUE)
         {
             type = MotorolaTypeIIMessageType.CC_BROADCAST;
         }
-        else if(osw2.command == CMD_SYSTEM_ID && !osw2.isGroup)
+        else if(osw.command == CMD_SYSTEM_ID && !osw.isGroup)
         {
             type = MotorolaTypeIIMessageType.SYSTEM_ID;
         }
-        else if(osw2.command >= 0x360 && osw2.command <= 0x39F && !osw2.isGroup)
+        else if(osw.command >= 0x360 && osw.command <= 0x39F && !osw.isGroup)
         {
             type = MotorolaTypeIIMessageType.AMSS;
         }
-        else if(osw2.command == CMD_NETWORK_STATUS && !osw2.isGroup)
+        else if(osw.command == CMD_NETWORK_STATUS && !osw.isGroup)
         {
             type = MotorolaTypeIIMessageType.NETWORK_STATUS;
         }
-        else if(osw2.command == CMD_SYSTEM_STATUS && !osw2.isGroup)
+        else if(osw.command == CMD_SYSTEM_STATUS && !osw.isGroup)
         {
             type = MotorolaTypeIIMessageType.SYSTEM_STATUS;
         }
-        else if(osw2.command == CMD_GROUP_BUSY && osw2.isGroup)
+        else if(osw.command == CMD_GROUP_BUSY && osw.isGroup)
         {
             type = MotorolaTypeIIMessageType.GROUP_BUSY;
         }
-        else if(osw2.command == CMD_EMERGENCY_BUSY && osw2.isGroup)
+        else if(osw.command == CMD_EMERGENCY_BUSY && osw.isGroup)
         {
             type = MotorolaTypeIIMessageType.EMERGENCY_BUSY;
         }
-        else if(osw2.command == CMD_SEND_AFFILIATION && !osw2.isGroup)
+        else if(osw.command == CMD_SEND_AFFILIATION)
         {
             type = MotorolaTypeIIMessageType.SEND_AFFILIATION;
         }
-        else if(osw2.command == CMD_ROAMING && !osw2.isGroup)
+        else if(osw.command == CMD_ROAMING && !osw.isGroup)
         {
             type = MotorolaTypeIIMessageType.ROAMING;
         }
-        else if(osw2.command == CMD_INTERCONNECT_REJECT && !osw2.isGroup)
+        else if(osw.command == CMD_INTERCONNECT_REJECT && !osw.isGroup)
         {
             type = MotorolaTypeIIMessageType.INTERCONNECT_REJECT;
         }
-        else if(osw2.command == CMD_BSI && !osw2.isGroup)
+        else if(osw.command == CMD_BSI && osw.isGroup)
         {
             type = MotorolaTypeIIMessageType.BSI_DIAGNOSTIC;
         }
 
         if(type != null)
         {
-            messages.add(createMessage(type, osw2, osw2.isGroup));
+            // For GROUP_UPDATE, address field contains the channel number
+            int channelNumber = (type == MotorolaTypeIIMessageType.GROUP_UPDATE) ? (osw.address & 0x3FF) : 0;
+            messages.add(createMessage(type, osw.address, osw.isGroup, osw.command, channelNumber));
             queue.removeNewest();
         }
 
         return messages;
     }
 
-    private static MotorolaTypeIIMessageType mapAnalogSubCommand(int command)
+    private static boolean isIdle(OswEntry entry)
     {
-        switch(command)
-        {
-            case CMD2_AFFILIATION:
-                return MotorolaTypeIIMessageType.AFFILIATION;
-            case CMD2_MESSAGE:
-                return MotorolaTypeIIMessageType.MESSAGE;
-            case CMD2_PRIVATE_CALL_RING_ENC:
-            case CMD2_PRIVATE_CALL_RING_CLR:
-            case CMD2_PRIVATE_CALL_RING_ACK:
-                return MotorolaTypeIIMessageType.PRIVATE_CALL_RING;
-            case CMD2_CALL_ALERT:
-                return MotorolaTypeIIMessageType.CALL_ALERT;
-            case CMD2_CALL_ALERT_ACK:
-                return MotorolaTypeIIMessageType.CALL_ALERT_ACK;
-            case CMD2_OMNILINK_TRESPASS:
-                return MotorolaTypeIIMessageType.OMNILINK_TRESPASS;
-            case CMD2_DATE_TIME:
-                return MotorolaTypeIIMessageType.DATE_TIME;
-            case CMD2_EMERGENCY_PTT:
-                return MotorolaTypeIIMessageType.EMERGENCY_PTT;
-            case CMD2_PATCH:
-                return MotorolaTypeIIMessageType.PATCH;
-            case CMD2_DYNAMIC_REGROUP:
-                return MotorolaTypeIIMessageType.DYNAMIC_REGROUP;
-            case CMD2_SYSTEM_ID_CC:
-                return MotorolaTypeIIMessageType.SYSTEM_ID_CC;
-            case CMD2_STATUS_ACK:
-                return MotorolaTypeIIMessageType.STATUS_ACK;
-            case CMD2_PRIVATE_BUSY:
-                return MotorolaTypeIIMessageType.PRIVATE_CALL_BUSY;
-            case CMD_GROUP_BUSY:
-                return MotorolaTypeIIMessageType.GROUP_BUSY_QUEUED;
-            case CMD_EMERGENCY_BUSY:
-                return MotorolaTypeIIMessageType.EMERGENCY_BUSY_QUEUED;
-            default:
-                return null;
-        }
+        return entry.command == CMD_IDLE && !entry.isGroup;
     }
 
-    private static MotorolaTypeIIMessage createMessage(MotorolaTypeIIMessageType type, OswEntry entry, boolean isGroup)
+    private static MotorolaTypeIIMessage createMessage(MotorolaTypeIIMessageType type, int address,
+                                                        boolean isGroup, int command, int channelNumber)
     {
-        return new MotorolaTypeIIMessage(entry.address, isGroup, entry.command, entry.isReset ? null :
-                new io.github.dsheirer.bits.CorrectedBinaryMessage(0), true, type);
+        return new MotorolaTypeIIMessage(address, isGroup, command, channelNumber, null, true, type);
     }
 
-    private static MotorolaTypeIIMessage createGrantMessage(MotorolaTypeIIMessageType type, OswEntry talkgroupEntry,
-                                                             OswEntry channelEntry, boolean isGroup)
+    private static MotorolaTypeIIMessage createGrantMessage(MotorolaTypeIIMessageType type, int talkgroupAddress,
+                                                             boolean isGroup, int command, int channelNumber,
+                                                             int sourceAddress)
     {
-        return new MotorolaTypeIIMessage(talkgroupEntry.address, isGroup, talkgroupEntry.command,
-                channelEntry.address, talkgroupEntry.isReset ? null :
-                new io.github.dsheirer.bits.CorrectedBinaryMessage(0), true, type);
+        return new MotorolaTypeIIMessage(talkgroupAddress, isGroup, command, channelNumber, null, true, type);
     }
 }
