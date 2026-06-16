@@ -90,10 +90,45 @@ public class MotorolaTypeIIMessage extends Message
         StringBuilder sb = new StringBuilder();
         sb.append("MOTO T2 ");
         sb.append(mMessageType.name());
-        sb.append(" ");
-        sb.append(mIsGroup ? "GRP" : "IND");
-        sb.append(" ADDR:").append(String.format("%04X", mAddress));
-        sb.append(" CMD:").append(String.format("%03X", mCommand));
+
+        switch(mMessageType)
+        {
+            case ANALOG_GROUP_GRANT:
+            case DIGITAL_GROUP_GRANT:
+                sb.append(" TG:").append(String.format("0x%04X", mAddress));
+                sb.append(" CH:").append(String.format("0x%03X", mChannelNumber));
+                break;
+            case ANALOG_PRIVATE_CALL:
+            case DIGITAL_PRIVATE_CALL:
+                sb.append(" RID:").append(String.format("0x%04X", mAddress));
+                sb.append(" CH:").append(String.format("0x%03X", mChannelNumber));
+                break;
+            case GROUP_UPDATE:
+                sb.append(" CH:").append(String.format("0x%03X", mChannelNumber));
+                break;
+            case SYSTEM_ID:
+                sb.append(" SYS:").append(String.format("0x%04X", mAddress));
+                break;
+            case AMSS:
+                int siteId = mCommand - 0x360 + 1;
+                sb.append(" SITE:").append(siteId);
+                break;
+            case SYSTEM_ID_CC:
+                sb.append(" SYS:").append(String.format("0x%04X", mAddress));
+                sb.append(" CH:").append(String.format("0x%03X", mChannelNumber));
+                break;
+            case NETWORK_STATUS:
+            case SYSTEM_STATUS:
+                sb.append(" CMD:").append(String.format("0x%03X", mCommand));
+                break;
+            default:
+                sb.append(" ");
+                sb.append(mIsGroup ? "GRP" : "IND");
+                sb.append(" ADDR:").append(String.format("%04X", mAddress));
+                sb.append(" CMD:").append(String.format("%03X", mCommand));
+                break;
+        }
+
         if(!mValid)
         {
             sb.append(" CRC:FAIL");

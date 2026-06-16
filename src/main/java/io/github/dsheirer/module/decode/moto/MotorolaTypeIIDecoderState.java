@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 public class MotorolaTypeIIDecoderState extends DecoderState
 {
     private final static Logger mLog = LoggerFactory.getLogger(MotorolaTypeIIDecoderState.class);
+    private static final int STATS_LOG_INTERVAL = 1000;
 
     private final MotorolaTypeIITrafficChannelManager mTrafficChannelManager;
     private final ChannelType mChannelType;
@@ -30,6 +31,13 @@ public class MotorolaTypeIIDecoderState extends DecoderState
 
     private int mSystemId;
     private int mSiteId;
+    private double mConnectTone;
+    private boolean mSystemIdDecoded;
+    private boolean mSiteIdDecoded;
+    private boolean mConnectToneDecoded;
+
+    private int mTotalMessagesDecoded;
+    private int mCrcErrors;
 
     public MotorolaTypeIIDecoderState(Channel channel, MotorolaTypeIITrafficChannelManager trafficChannelManager)
     {
@@ -48,6 +56,36 @@ public class MotorolaTypeIIDecoderState extends DecoderState
                 new Bandplan(BandplanType.EIGHT_HUNDRED_REBANTED);
     }
 
+    public int getSystemId()
+    {
+        return mSystemId;
+    }
+
+    public int getSiteId()
+    {
+        return mSiteId;
+    }
+
+    public double getConnectTone()
+    {
+        return mConnectTone;
+    }
+
+    public void setConnectTone(double connectTone)
+    {
+        if(!mConnectToneDecoded)
+        {
+            mConnectTone = connectTone;
+            mConnectToneDecoded = true;
+            mLog.info("Moto T2 Connect Tone: {} Hz", connectTone);
+        }
+    }
+
+    public Bandplan getBandplan()
+    {
+        return mBandplan;
+    }
+
     @Override
     public DecoderType getDecoderType()
     {
@@ -57,17 +95,24 @@ public class MotorolaTypeIIDecoderState extends DecoderState
     @Override
     public void receive(IMessage message)
     {
-        if(!message.isValid())
-        {
-            return;
-        }
-
         if(!(message instanceof MotorolaTypeIIMessage moto))
         {
             return;
         }
 
+        if(!moto.isValid())
+        {
+            mCrcErrors++;
+            mTotalMessagesDecoded++;
+            logStatsIfDue();
+            mLog.debug("Moto T2 CRC error: {}", moto);
+            return;
+        }
+
+        mTotalMessagesDecoded++;
         MotorolaTypeIIMessageType type = moto.getMessageType();
+
+        mLog.info("Moto T2 RX: {}", moto);
 
         switch(type)
         {
@@ -92,16 +137,18 @@ public class MotorolaTypeIIDecoderState extends DecoderState
                 broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
                 break;
             default:
-                mLog.debug("Moto T2: {}", moto);
                 broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
                 break;
         }
+
+        logStatsIfDue();
     }
 
     private void processChannelGrant(MotorolaTypeIIMessage message)
     {
         int channelNumber = message.getChannelNumber();
         int talkgroup = message.getAddress();
+        double frequencyMHz = mBandplan.getDownlinkFrequency(channelNumber);
 
         MutableIdentifierCollection ic = new MutableIdentifierCollection(getIdentifierCollection().getIdentifiers());
         ic.remove(IdentifierClass.USER);
@@ -110,13 +157,18 @@ public class MotorolaTypeIIDecoderState extends DecoderState
         MotorolaTypeIIChannel channel = new MotorolaTypeIIChannel(channelNumber, mBandplan);
 
         String mode = message.getMessageType() == MotorolaTypeIIMessageType.DIGITAL_GROUP_GRANT ? "DIGITAL" : "ANALOG";
+        String freqStr = frequencyMHz > 0 ? String.format("%.4f MHz", frequencyMHz) : "unknown freq";
         DecodeEvent event = DecodeEvent.builder(DecodeEventType.CALL, message.getTimestamp())
                 .channel(channel)
                 .identifiers(ic)
-                .details(mode + " Group Grant CH:" + channelNumber + " TG:" + talkgroup)
+                .details(mode + " Group Grant CH:" + String.format("0x%03X", channelNumber) +
+                        " TG:" + String.format("0x%04X", talkgroup) + " " + freqStr)
                 .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
                 .build();
         broadcast(event);
+
+        mLog.info("Moto T2 GRANT: {} TG:{} CH:{} ({})", mode,
+                String.format("0x%04X", talkgroup), String.format("0x%03X", channelNumber), freqStr);
 
         if(mTrafficChannelManager != null)
         {
@@ -129,12 +181,14 @@ public class MotorolaTypeIIDecoderState extends DecoderState
     private void processGroupUpdate(MotorolaTypeIIMessage message)
     {
         int channelNumber = message.getAddress();
+        double frequencyMHz = mBandplan.getDownlinkFrequency(channelNumber);
 
         MotorolaTypeIIChannel channel = new MotorolaTypeIIChannel(channelNumber, mBandplan);
 
+        String freqStr = frequencyMHz > 0 ? String.format("%.4f MHz", frequencyMHz) : "unknown freq";
         DecodeEvent event = DecodeEvent.builder(DecodeEventType.CALL_IN_PROGRESS, message.getTimestamp())
                 .channel(channel)
-                .details("Group Update CH:" + channelNumber)
+                .details("Group Update CH:" + String.format("0x%03X", channelNumber) + " " + freqStr)
                 .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
                 .build();
         broadcast(event);
@@ -150,7 +204,12 @@ public class MotorolaTypeIIDecoderState extends DecoderState
     private void processSystemId(MotorolaTypeIIMessage message)
     {
         mSystemId = message.getAddress();
-        mLog.info("Moto T2 System ID: 0x{}", Integer.toHexString(mSystemId));
+
+        if(!mSystemIdDecoded)
+        {
+            mSystemIdDecoded = true;
+            mLog.info("Moto T2 System ID decoded: 0x{}", Integer.toHexString(mSystemId));
+        }
 
         DecodeEvent event = DecodeEvent.builder(DecodeEventType.STATUS, message.getTimestamp())
                 .details("System ID: " + String.format("0x%04X", mSystemId))
@@ -164,7 +223,13 @@ public class MotorolaTypeIIDecoderState extends DecoderState
     private void processAmss(MotorolaTypeIIMessage message)
     {
         mSiteId = message.getCommand() - 0x360 + 1;
-        mLog.info("Moto T2 Site ID: {}", mSiteId);
+
+        if(!mSiteIdDecoded)
+        {
+            mSiteIdDecoded = true;
+            mLog.info("Moto T2 Site ID decoded: {} (from AMSS cmd 0x{})", mSiteId,
+                    Integer.toHexString(message.getCommand()));
+        }
 
         DecodeEvent event = DecodeEvent.builder(DecodeEventType.STATUS, message.getTimestamp())
                 .details("AMSS Site ID: " + mSiteId)
@@ -177,8 +242,6 @@ public class MotorolaTypeIIDecoderState extends DecoderState
 
     private void processStatus(MotorolaTypeIIMessage message)
     {
-        mLog.debug("Moto T2 Status: {}", message);
-
         DecodeEvent event = DecodeEvent.builder(DecodeEventType.STATUS, message.getTimestamp())
                 .details(message.getMessageType().name())
                 .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
@@ -186,6 +249,16 @@ public class MotorolaTypeIIDecoderState extends DecoderState
         broadcast(event);
 
         broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
+    }
+
+    private void logStatsIfDue()
+    {
+        if(mTotalMessagesDecoded > 0 && mTotalMessagesDecoded % STATS_LOG_INTERVAL == 0)
+        {
+            mLog.info("Moto T2 stats: messages={} CRC_errors={} sys=0x{} site={}",
+                    mTotalMessagesDecoded, mCrcErrors,
+                    String.format("%04X", mSystemId), mSiteId);
+        }
     }
 
     @Override
@@ -200,6 +273,12 @@ public class MotorolaTypeIIDecoderState extends DecoderState
         sb.append("Decoder:\tMotorola Type II\n");
         sb.append("System ID:\t").append(String.format("0x%04X", mSystemId)).append("\n");
         sb.append("Site ID:\t").append(mSiteId).append("\n");
+        if(mConnectToneDecoded)
+        {
+            sb.append("Connect Tone:\t").append(mConnectTone).append(" Hz\n");
+        }
+        sb.append("Messages:\t").append(mTotalMessagesDecoded).append("\n");
+        sb.append("CRC Errors:\t").append(mCrcErrors).append("\n");
         return sb.toString();
     }
 
