@@ -64,6 +64,7 @@ import io.github.dsheirer.module.decode.lj1200.LJ1200MessageFilter;
 import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoder;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoderState;
+import io.github.dsheirer.module.decode.moto.BandplanType;
 import io.github.dsheirer.module.decode.moto.DecodeConfigMotorolaTypeII;
 import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoder;
 import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoderState;
@@ -770,6 +771,8 @@ public class DecoderFactory
                 return new DecodeConfigP25Phase2();
             case EDACS:
                 return new DecodeConfigEDACS();
+            case MOTOROLA_TYPE_II:
+                return new DecodeConfigMotorolaTypeII();
             default:
                 throw new IllegalArgumentException("DecodeConfigFactory - unknown decoder type [" + decoder + "]");
         }
@@ -846,6 +849,19 @@ public class DecoderFactory
                     DecodeConfigEDACS copyEDACS = new DecodeConfigEDACS();
                     copyEDACS.setLcnFrequencies(originalEDACS.getLcnFrequencies());
                     return copyEDACS;
+                case MOTOROLA_TYPE_II:
+                    DecodeConfigMotorolaTypeII originalMoto = (DecodeConfigMotorolaTypeII)config;
+                    DecodeConfigMotorolaTypeII copyMoto = new DecodeConfigMotorolaTypeII();
+                    copyMoto.setBandplanType(originalMoto.getBandplanType());
+                    copyMoto.setTrafficChannelPoolSize(originalMoto.getTrafficChannelPoolSize());
+                    copyMoto.setDefaultVoiceMode(originalMoto.getDefaultVoiceMode());
+                    if(originalMoto.getBandplanType() == BandplanType.OBT)
+                    {
+                        copyMoto.setObtBaseFrequency(originalMoto.getObtBaseFrequency());
+                        copyMoto.setObtSpacing(originalMoto.getObtSpacing());
+                        copyMoto.setObtOffset(originalMoto.getObtOffset());
+                    }
+                    return copyMoto;
                 default:
                     throw new IllegalArgumentException("Unrecognized decoder configuration type:" + config.getDecoderType());
             }
