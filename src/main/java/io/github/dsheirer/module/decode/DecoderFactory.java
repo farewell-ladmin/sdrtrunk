@@ -64,6 +64,10 @@ import io.github.dsheirer.module.decode.lj1200.LJ1200MessageFilter;
 import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoder;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoderState;
+import io.github.dsheirer.module.decode.moto.DecodeConfigMotorolaTypeII;
+import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoder;
+import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoderState;
+import io.github.dsheirer.module.decode.moto.MotorolaTypeIITrafficChannelManager;
 import io.github.dsheirer.module.decode.ltrnet.DecodeConfigLTRNet;
 import io.github.dsheirer.module.decode.ltrnet.LTRNetDecoder;
 import io.github.dsheirer.module.decode.ltrnet.LTRNetDecoderState;
@@ -198,6 +202,10 @@ public class DecoderFactory
                 break;
             case EDACS:
                 processEDACS(userPreferences, channel, modules, aliasList, decodeConfig);
+                break;
+            case MOTOROLA_TYPE_II:
+                processMotorolaTypeII(channel, userPreferences, modules, aliasList,
+                    (DecodeConfigMotorolaTypeII) decodeConfig, trafficChannelManager, channelDescriptor);
                 break;
             default:
                 throw new IllegalArgumentException("Unknown decoder type [" + decodeConfig.getDecoderType().toString() + "]");
@@ -480,6 +488,32 @@ public class DecoderFactory
         modules.add(decoder);
         modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
         modules.add(new EDACSDecoderState());
+    }
+
+    /**
+     * Creates decoder modules for Motorola Type II trunking (Smartnet/SmartZone).
+     */
+    private static void processMotorolaTypeII(Channel channel, UserPreferences userPreferences,
+                                               List<Module> modules, AliasList aliasList,
+                                               DecodeConfigMotorolaTypeII decodeConfig,
+                                               TrafficChannelManager trafficChannelManager,
+                                               IChannelDescriptor channelDescriptor)
+    {
+        if(channel.isTrafficChannel())
+        {
+            DecodeConfigNBFM nbfmConfig = new DecodeConfigNBFM();
+            modules.add(new NBFMDecoder(nbfmConfig));
+            modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig));
+            modules.add(new AudioModule(aliasList, 0, 60000, AUDIO_FILTER_ENABLE));
+        }
+        else
+        {
+            modules.add(new MotorolaTypeIIDecoder(decodeConfig));
+            MotorolaTypeIITrafficChannelManager tcm = new MotorolaTypeIITrafficChannelManager(channel, decodeConfig);
+            modules.add(tcm);
+            modules.add(new MotorolaTypeIIDecoderState(channel, tcm));
+            modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
+        }
     }
 
     /**

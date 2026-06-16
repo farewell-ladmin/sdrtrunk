@@ -310,6 +310,15 @@ public class RadioReferenceDecoder
     }
 
     /**
+     * Indicates if the system is a Motorola Type II analog trunking system.
+     */
+    public boolean isMotorolaTypeII(System system)
+    {
+        return getType(system) != null && getType(system).getName().contentEquals("Motorola") &&
+            getProtocol(system) == Protocol.MOTOROLA_TYPE_II;
+    }
+
+    /**
      * Indicates if the site is a simulcast site.
      * @param site to inspect
      * @return true if the site employs LSM modulation
@@ -428,6 +437,11 @@ public class RadioReferenceDecoder
                 {
                     return Protocol.APCO25;
                 }
+                else if(voice.getName().contentEquals("Analog") ||
+                    voice.getName().contentEquals("Analog/FM"))
+                {
+                    return Protocol.MOTOROLA_TYPE_II;
+                }
                 break;
             case "NXDN":
             case "EDACS":
@@ -505,6 +519,11 @@ public class RadioReferenceDecoder
                         voice.getName().contentEquals("APCO-25 Common Air Interface Exclusive"))
                     {
                         return DecoderType.P25_PHASE1;
+                    }
+                    else if(voice.getName().contentEquals("Analog") ||
+                        voice.getName().contentEquals("Analog/FM"))
+                    {
+                        return DecoderType.MOTOROLA_TYPE_II;
                     }
                     break;
                 case "NXDN":

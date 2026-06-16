@@ -36,6 +36,7 @@ gradle-app.setting
 
 # AGENTS.md configuration (local only)
 AGENTS.md
+PLAN.md
 
 # Machine-specific Gradle properties (JDK paths)
 gradle.properties

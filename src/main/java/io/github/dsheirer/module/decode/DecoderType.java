@@ -38,6 +38,7 @@ public enum DecoderType
     P25_PHASE2("P25 Phase 2", "P25-2", Protocol.APCO25_PHASE2),
     EDACS("EDACS", "EDACS", Protocol.EDACS),
     EDACS_NB("EDACS Narrowband", "EDACS-NB", Protocol.EDACS_NB),
+    MOTOROLA_TYPE_II("Motorola Type II", "Moto T2", Protocol.MOTOROLA_TYPE_II),
 
     //Auxiliary Decoders
     DCS("Digital Coded Squelch (DCS)", "DCS", Protocol.DCS),
@@ -71,6 +72,7 @@ public enum DecoderType
         DecoderType.P25_PHASE2,
         DecoderType.EDACS,
         DecoderType.EDACS_NB,
+        DecoderType.MOTOROLA_TYPE_II,
         DecoderType.PASSPORT);
 
     /**
@@ -87,7 +89,7 @@ public enum DecoderType
      * Decoders that produce a (recordable) bitstream
      */
     public static final EnumSet<DecoderType> BITSTREAM_DECODERS = EnumSet.of(DecoderType.DMR,
-        DecoderType.MPT1327, DecoderType.P25_PHASE1, DecoderType.P25_PHASE2);
+        DecoderType.MOTOROLA_TYPE_II, DecoderType.MPT1327, DecoderType.P25_PHASE1, DecoderType.P25_PHASE2);
 
     /**
      * Decoders that produce (recordable) MBE audio codec frames
