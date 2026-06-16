@@ -117,12 +117,25 @@ public class OswExtractor
 
         int correctedBits = correctErrors(info, parity);
 
-        int crcAccum = computeCrc(info);
-
-        int receivedCrc = 0;
-        for(int i = 0; i < CRC_BITS; i++)
+        // Debug: log first few frames
+        if(mConsecutiveBadOsw < 3)
         {
-            receivedCrc = (receivedCrc << 1) | info[DATA_BITS + i];
+            StringBuilder sb = new StringBuilder("Frame data: ");
+            for(int i = 0; i < 37; i++)
+            {
+                sb.append(info[i]);
+            }
+            mLog.info(sb.toString());
+        }
+
+        int crcAccum = computeCrc(info);
+        int receivedCrc = extractReceivedCrc(info);
+
+        if(mConsecutiveBadOsw < 3)
+        {
+            mLog.info("CRC check: computed=0x{} received=0x{}",
+                String.format("%03X", crcAccum),
+                String.format("%03X", receivedCrc));
         }
 
         if(crcAccum != receivedCrc)
@@ -212,19 +225,39 @@ public class OswExtractor
 
     private int computeCrc(int[] info)
     {
-        int crcAccum = CRC_INIT;
+        // OP25 CRC algorithm - shift right with polynomial 0x0225
+        int crcAccum = CRC_INIT;  // 0x0393
+        int crcOp = 0x036E;
 
-        for(int i = 0; i < DATA_BITS; i++)
+        for(int j = 0; j < DATA_BITS; j++)
         {
-            int feedback = ((crcAccum >> 9) & 1) ^ info[i];
-            crcAccum = (crcAccum << 1);
-            if(feedback != 0)
+            if((crcOp & 0x01) != 0)
             {
-                crcAccum ^= CRC_POLY;
+                crcOp = (crcOp >> 1) ^ CRC_POLY;  // 0x0225
             }
-            crcAccum &= CRC_MASK;
+            else
+            {
+                crcOp >>= 1;
+            }
+
+            if((info[j] & 0x01) != 0)
+            {
+                crcAccum ^= crcOp;
+            }
         }
 
         return crcAccum;
+    }
+
+    private int extractReceivedCrc(int[] info)
+    {
+        // CRC bits are inverted in the frame
+        int crcGiven = 0;
+        for(int j = 0; j < CRC_BITS; j++)
+        {
+            crcGiven <<= 1;
+            crcGiven += (~info[DATA_BITS + j]) & 0x01;
+        }
+        return crcGiven;
     }
 }
