@@ -52,7 +52,8 @@ public class MotorolaTypeIIDecoder extends Decoder implements IComplexSamplesLis
     {
         mDecodeConfig = decodeConfig;
         mFMDemodulator = FmDemodulatorFactory.getFmDemodulator();
-        mOswExtractor = new OswExtractor();
+        Bandplan bandplan = new Bandplan(decodeConfig.getBandplanType());
+        mOswExtractor = new OswExtractor(bandplan);
     }
 
     @Override

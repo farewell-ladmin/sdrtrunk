@@ -2,6 +2,7 @@
 package io.github.dsheirer.module.decode.moto.osw;
 
 import io.github.dsheirer.message.IMessage;
+import io.github.dsheirer.module.decode.moto.Bandplan;
 import io.github.dsheirer.module.decode.moto.message.MotorolaTypeIIMessage;
 import io.github.dsheirer.module.decode.moto.message.MotorolaTypeIIMessageFactory;
 import io.github.dsheirer.module.decode.moto.message.OswQueue;
@@ -45,7 +46,14 @@ public class OswExtractor
     private boolean mCollecting;
 
     private int mConsecutiveBadOsw;
-    private final OswQueue mOswQueue = new OswQueue();
+    private final OswQueue mOswQueue;
+    private final Bandplan mBandplan;
+
+    public OswExtractor(Bandplan bandplan)
+    {
+        mBandplan = bandplan;
+        mOswQueue = new OswQueue(bandplan);
+    }
 
     public void setSampleRate(double sampleRate)
     {
@@ -170,7 +178,16 @@ public class OswExtractor
         command ^= CMD_XOR;
         command &= 0x3FF;
 
-        OswEntry entry = new OswEntry(address, isGroup, command, System.currentTimeMillis());
+        // Debug: log extracted OSW
+        if(mConsecutiveBadOsw == 0)
+        {
+            mLog.info("OSW extracted: addr=0x{} grp={} cmd=0x{}",
+                String.format("%04X", address),
+                isGroup ? "G" : "I",
+                String.format("%03X", command));
+        }
+
+        OswEntry entry = new OswEntry(address, isGroup, command, System.currentTimeMillis(), mBandplan);
         mOswQueue.add(entry);
         processQueue(messageListener);
     }

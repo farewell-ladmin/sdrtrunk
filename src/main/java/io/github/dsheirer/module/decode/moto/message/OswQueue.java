@@ -1,5 +1,6 @@
 package io.github.dsheirer.module.decode.moto.message;
 
+import io.github.dsheirer.module.decode.moto.Bandplan;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
@@ -13,6 +14,13 @@ public class OswQueue
     public static final int QUEUE_SIZE = 6;
     public static final int QUEUE_RESET_ADDRESS = 0xFFE;
 
+    private final Bandplan mBandplan;
+
+    public OswQueue(Bandplan bandplan)
+    {
+        mBandplan = bandplan;
+    }
+
     /**
      * Represents a single OSW entry in the queue.
      */
@@ -23,14 +31,29 @@ public class OswQueue
         public final int command;
         public final long timestamp;
         public final boolean isReset;
+        public final boolean isChannel;
+        public final int channelNumber;
 
-        public OswEntry(int address, boolean isGroup, int command, long timestamp)
+        public OswEntry(int address, boolean isGroup, int command, long timestamp, Bandplan bandplan)
         {
             this.address = address;
             this.isGroup = isGroup;
             this.command = command;
             this.timestamp = timestamp;
             this.isReset = false;
+            
+            // Check if command field contains a valid channel number
+            if(bandplan != null && command >= 0 && command <= 0x3FF)
+            {
+                double freq = bandplan.getDownlinkFrequency(command);
+                this.isChannel = (freq > 0);
+                this.channelNumber = this.isChannel ? command : 0;
+            }
+            else
+            {
+                this.isChannel = false;
+                this.channelNumber = 0;
+            }
         }
 
         private OswEntry()
@@ -40,19 +63,13 @@ public class OswQueue
             this.command = 0;
             this.timestamp = System.currentTimeMillis();
             this.isReset = true;
+            this.isChannel = false;
+            this.channelNumber = 0;
         }
 
         public static OswEntry createReset()
         {
             return new OswEntry();
-        }
-
-        public boolean isChannel()
-        {
-            // A channel number is valid if it maps to a valid frequency
-            // For now, consider address < 0x3FF as potentially a channel
-            // The bandplan will validate properly
-            return address < 0x3FF && !isReset;
         }
     }
 
@@ -68,6 +85,14 @@ public class OswQueue
             mQueue.removeFirst();
         }
         mQueue.addLast(entry);
+    }
+
+    /**
+     * Add an OSW to the queue with the given parameters.
+     */
+    public void add(int address, boolean isGroup, int command, long timestamp)
+    {
+        add(new OswEntry(address, isGroup, command, timestamp, mBandplan));
     }
 
     /**
@@ -158,6 +183,22 @@ public class OswQueue
     public void removeOldest()
     {
         mQueue.removeFirst();
+    }
+
+    /**
+     * Remove the middle entry from the queue.
+     */
+    public void removeMiddle()
+    {
+        // Middle is at index QUEUE_SIZE - 2 = 4
+        // We need to remove it and shift newer entries down
+        java.util.List<OswEntry> list = new java.util.ArrayList<>(mQueue);
+        if(list.size() >= QUEUE_SIZE - 1)
+        {
+            list.remove(QUEUE_SIZE - 2);
+            mQueue.clear();
+            mQueue.addAll(list);
+        }
     }
 
     /**
