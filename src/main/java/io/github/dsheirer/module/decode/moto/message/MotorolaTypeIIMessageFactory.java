@@ -87,24 +87,26 @@ public class MotorolaTypeIIMessageFactory
             return processThreeOswSystem(queue, osw0, osw1, osw2);
         }
 
-        // Check for 2-OSW analog grant - if match, process and return
-        if(osw0.command == CMD_ANALOG_GRANT && osw1.isChannel && osw0.address != 0 && osw1.address != 0)
+        // Check for 2-OSW analog grant or sub-command (cmd 0x308)
+        // OP25: when osw0.cmd == 0x308, ALWAYS dispatch to processAnalogGrant
+        // which checks for channel (grant) OR non-channel sub-commands (PATCH, AFFILIATION, etc.)
+        if(osw0.command == CMD_ANALOG_GRANT && osw0.address != 0)
         {
             return processAnalogGrant(queue, osw0, osw1);
         }
         
-        if(osw1.command == CMD_ANALOG_GRANT && osw2.isChannel && osw1.address != 0 && osw2.address != 0)
+        if(osw1.command == CMD_ANALOG_GRANT && osw1.address != 0)
         {
             return processAnalogGrant(queue, osw1, osw2);
         }
 
-        // Check for 2-OSW digital grant
-        if(osw0.command == CMD_DIGITAL_GRANT && osw1.isChannel && osw0.address != 0 && osw1.address != 0)
+        // Check for 2-OSW digital grant or sub-command (cmd 0x321)
+        if(osw0.command == CMD_DIGITAL_GRANT && osw0.address != 0)
         {
             return processDigitalGrant(queue, osw0, osw1);
         }
         
-        if(osw1.command == CMD_DIGITAL_GRANT && osw2.isChannel && osw1.address != 0 && osw2.address != 0)
+        if(osw1.command == CMD_DIGITAL_GRANT && osw1.address != 0)
         {
             return processDigitalGrant(queue, osw1, osw2);
         }

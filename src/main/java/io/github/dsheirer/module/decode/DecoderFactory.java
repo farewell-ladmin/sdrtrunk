@@ -513,7 +513,7 @@ public class DecoderFactory
             MotorolaTypeIITrafficChannelManager tcm = new MotorolaTypeIITrafficChannelManager(channel, decodeConfig);
             modules.add(tcm);
             modules.add(new MotorolaTypeIIDecoderState(channel, tcm));
-            modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
+            // No AudioModule on control channel - CC is data-only, audio belongs on traffic channels
         }
     }
 

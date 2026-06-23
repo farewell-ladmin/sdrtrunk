@@ -175,12 +175,14 @@ public class MotorolaTypeIIDecoderState extends DecoderState
             mTrafficChannelManager.processChannelGrant(message, ic, channel);
         }
 
-        broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
+        // Control channel stays in CONTROL state - CALL state is for traffic channels only
+        broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
     }
 
     private void processGroupUpdate(MotorolaTypeIIMessage message)
     {
-        int channelNumber = message.getAddress();
+        int channelNumber = message.getChannelNumber();
+        int talkgroup = message.getAddress();
         double frequencyMHz = mBandplan.getDownlinkFrequency(channelNumber);
 
         MotorolaTypeIIChannel channel = new MotorolaTypeIIChannel(channelNumber, mBandplan);
@@ -188,7 +190,8 @@ public class MotorolaTypeIIDecoderState extends DecoderState
         String freqStr = frequencyMHz > 0 ? String.format("%.4f MHz", frequencyMHz) : "unknown freq";
         DecodeEvent event = DecodeEvent.builder(DecodeEventType.CALL_IN_PROGRESS, message.getTimestamp())
                 .channel(channel)
-                .details("Group Update CH:" + String.format("0x%03X", channelNumber) + " " + freqStr)
+                .details("Group Update TG:" + String.format("0x%04X", talkgroup) + 
+                         " CH:" + String.format("0x%03X", channelNumber) + " " + freqStr)
                 .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
                 .build();
         broadcast(event);
@@ -198,7 +201,8 @@ public class MotorolaTypeIIDecoderState extends DecoderState
             mTrafficChannelManager.processGroupUpdate(message, channel);
         }
 
-        broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
+        // Control channel stays in CONTROL state
+        broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
     }
 
     private void processSystemId(MotorolaTypeIIMessage message)
