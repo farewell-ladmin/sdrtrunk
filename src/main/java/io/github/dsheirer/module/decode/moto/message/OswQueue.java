@@ -146,7 +146,7 @@ public class OswQueue
     }
 
     /**
-     * Get the newest entry (OSW2 in OP25 terminology).
+     * Get the newest entry (last added to queue).
      */
     public OswEntry getNewest()
     {
@@ -154,11 +154,29 @@ public class OswQueue
     }
 
     /**
-     * Get the middle entry (OSW1 in OP25 terminology).
+     * Get the second entry (index 1) - the OSW after the oldest.
+     * For 2-OSW messages, this is the second OSW of the pair.
+     */
+    public OswEntry getSecond()
+    {
+        return get(1);
+    }
+
+    /**
+     * Get the third entry (index 2) - for 3-OSW messages.
+     */
+    public OswEntry getThird()
+    {
+        return get(2);
+    }
+
+    /**
+     * Get the middle entry (index 1). Alias for getSecond().
+     * Kept for backward compatibility.
      */
     public OswEntry getMiddle()
     {
-        return get(QUEUE_SIZE - 2);
+        return get(1);
     }
 
     /**

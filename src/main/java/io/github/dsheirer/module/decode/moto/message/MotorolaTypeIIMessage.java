@@ -104,6 +104,7 @@ public class MotorolaTypeIIMessage extends Message
                 sb.append(" CH:").append(String.format("0x%03X", mChannelNumber));
                 break;
             case GROUP_UPDATE:
+                sb.append(" TG:").append(String.format("0x%04X", mAddress));
                 sb.append(" CH:").append(String.format("0x%03X", mChannelNumber));
                 break;
             case SYSTEM_ID:

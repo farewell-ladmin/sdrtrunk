@@ -125,26 +125,8 @@ public class OswExtractor
 
         int correctedBits = correctErrors(info, parity);
 
-        // Debug: log first few frames
-        if(mConsecutiveBadOsw < 3)
-        {
-            StringBuilder sb = new StringBuilder("Frame data: ");
-            for(int i = 0; i < 37; i++)
-            {
-                sb.append(info[i]);
-            }
-            mLog.info(sb.toString());
-        }
-
         int crcAccum = computeCrc(info);
         int receivedCrc = extractReceivedCrc(info);
-
-        if(mConsecutiveBadOsw < 3)
-        {
-            mLog.info("CRC check: computed=0x{} received=0x{}",
-                String.format("%03X", crcAccum),
-                String.format("%03X", receivedCrc));
-        }
 
         if(crcAccum != receivedCrc)
         {
@@ -177,15 +159,6 @@ public class OswExtractor
         }
         command ^= CMD_XOR;
         command &= 0x3FF;
-
-        // Debug: log extracted OSW
-        if(mConsecutiveBadOsw == 0)
-        {
-            mLog.info("OSW extracted: addr=0x{} grp={} cmd=0x{}",
-                String.format("%04X", address),
-                isGroup ? "G" : "I",
-                String.format("%03X", command));
-        }
 
         OswEntry entry = new OswEntry(address, isGroup, command, System.currentTimeMillis(), mBandplan);
         mOswQueue.add(entry);

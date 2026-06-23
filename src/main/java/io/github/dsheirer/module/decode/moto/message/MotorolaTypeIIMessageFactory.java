@@ -66,28 +66,16 @@ public class MotorolaTypeIIMessageFactory
             return messages;
         }
 
-        OswEntry osw2 = queue.getNewest();
-        OswEntry osw1 = queue.getMiddle();
-        OswEntry osw0 = queue.getOldest();
+        OswEntry osw0 = queue.getOldest();   // index 0 - first OSW of multi-OSW message
+        OswEntry osw1 = queue.getSecond();   // index 1 - second OSW
+        OswEntry osw2 = queue.getThird();    // index 2 - third OSW (for 3-OSW messages)
 
-        // Debug: log queue state
-        System.out.println("Queue: osw0=[cmd=0x" + String.format("%03X", osw0.command) + 
-            " addr=0x" + String.format("%04X", osw0.address) + " grp=" + (osw0.isGroup ? "G" : "I") +
-            "] osw1=[cmd=0x" + String.format("%03X", osw1.command) +
-            " addr=0x" + String.format("%04X", osw1.address) + " grp=" + (osw1.isGroup ? "G" : "I") +
-            "] osw2=[cmd=0x" + String.format("%03X", osw2.command) +
-            " addr=0x" + String.format("%04X", osw2.address) + " grp=" + (osw2.isGroup ? "G" : "I") + "]");
-
-        if(isIdle(osw2))
+        if(isIdle(osw0))
         {
+            queue.removeOldest();
             if(isIdle(osw1))
             {
-                queue.removeNewest();
-                queue.removeNewest();
-            }
-            else
-            {
-                queue.removeNewest();
+                queue.removeOldest();
             }
             return messages;
         }
@@ -99,80 +87,40 @@ public class MotorolaTypeIIMessageFactory
             return processThreeOswSystem(queue, osw0, osw1, osw2);
         }
 
-        // Check for 2-OSW analog grant - osw0 or osw1 has cmd=0x308, the other has channel info
-        if(osw0.command == CMD_ANALOG_GRANT)
+        // Check for 2-OSW analog grant - if match, process and return
+        if(osw0.command == CMD_ANALOG_GRANT && osw1.isChannel && osw0.address != 0 && osw1.address != 0)
         {
-            // osw1 should have channel info
-            if(osw1.isChannel && osw0.address != 0 && osw1.address != 0)
-            {
-                return processAnalogGrant(queue, osw0, osw1);
-            }
-            else
-            {
-                queue.removeOldest();
-                return messages;
-            }
+            return processAnalogGrant(queue, osw0, osw1);
         }
         
-        if(osw1.command == CMD_ANALOG_GRANT)
+        if(osw1.command == CMD_ANALOG_GRANT && osw2.isChannel && osw1.address != 0 && osw2.address != 0)
         {
-            // osw2 should have channel info
-            if(osw2.isChannel && osw1.address != 0 && osw2.address != 0)
-            {
-                return processAnalogGrant(queue, osw1, osw2);
-            }
-            else
-            {
-                queue.removeMiddle();
-                return messages;
-            }
+            return processAnalogGrant(queue, osw1, osw2);
         }
 
         // Check for 2-OSW digital grant
-        if(osw0.command == CMD_DIGITAL_GRANT)
+        if(osw0.command == CMD_DIGITAL_GRANT && osw1.isChannel && osw0.address != 0 && osw1.address != 0)
         {
-            if(osw1.isChannel && osw0.address != 0 && osw1.address != 0)
-            {
-                return processDigitalGrant(queue, osw0, osw1);
-            }
-            else
-            {
-                queue.removeOldest();
-                return messages;
-            }
+            return processDigitalGrant(queue, osw0, osw1);
         }
         
-        if(osw1.command == CMD_DIGITAL_GRANT)
+        if(osw1.command == CMD_DIGITAL_GRANT && osw2.isChannel && osw1.address != 0 && osw2.address != 0)
         {
-            if(osw2.isChannel && osw1.address != 0 && osw2.address != 0)
-            {
-                return processDigitalGrant(queue, osw1, osw2);
-            }
-            else
-            {
-                queue.removeMiddle();
-                return messages;
-            }
+            return processDigitalGrant(queue, osw1, osw2);
         }
 
-        // Handle IDLE interleaving: if osw2 is grant and osw1 is IDLE, remove both and re-queue osw2
-        if(osw2.command == CMD_ANALOG_GRANT && isIdle(osw1))
+        // Handle IDLE interleaving: if osw1 is IDLE between osw0 and osw2
+        if(isIdle(osw1) && (osw0.command == CMD_ANALOG_GRANT || osw0.command == CMD_DIGITAL_GRANT))
         {
-            queue.removeNewest();
-            queue.removeNewest();
-            queue.add(osw2);
+            // Remove osw0 and osw1 (IDLE), put osw0 back at front
+            queue.removeOldest();  // remove osw0
+            queue.removeOldest();  // remove osw1 (IDLE)
+            queue.pushFront(osw0); // put osw0 back
             return messages;
         }
 
-        if(osw2.command == CMD_DIGITAL_GRANT && isIdle(osw1))
-        {
-            queue.removeNewest();
-            queue.removeNewest();
-            queue.add(osw2);
-            return messages;
-        }
-
-        return processOneOsw(queue, osw2);
+        // No multi-OSW pattern matched - process osw0 as one-OSW message
+        return processOneOsw(queue, osw0);
     }
 
     private static List<MotorolaTypeIIMessage> processThreeOswSystem(OswQueue queue, OswEntry osw0,
@@ -191,9 +139,9 @@ public class MotorolaTypeIIMessageFactory
                 true, osw0.command, osw2.address));
         }
 
-        queue.removeNewest();
-        queue.removeNewest();
-        queue.removeNewest();
+        queue.removeOldest();
+        queue.removeOldest();
+        queue.removeOldest();
         return messages;
     }
 
@@ -206,8 +154,8 @@ public class MotorolaTypeIIMessageFactory
         {
             messages.add(createGrantMessage(MotorolaTypeIIMessageType.ANALOG_GROUP_GRANT,
                 oldest.address, true, oldest.command, newer.channelNumber, newer.address));
-            queue.removeNewest();
-            queue.removeNewest();
+            queue.removeOldest();
+            queue.removeOldest();
             return messages;
         }
 
@@ -215,8 +163,8 @@ public class MotorolaTypeIIMessageFactory
         {
             messages.add(createGrantMessage(MotorolaTypeIIMessageType.ANALOG_PRIVATE_CALL,
                 oldest.address, false, oldest.command, newer.isChannel ? newer.channelNumber : 0, newer.address));
-            queue.removeNewest();
-            queue.removeNewest();
+            queue.removeOldest();
+            queue.removeOldest();
             return messages;
         }
 
@@ -224,15 +172,15 @@ public class MotorolaTypeIIMessageFactory
         {
             messages.add(createMessage(MotorolaTypeIIMessageType.SYSTEM_ID_CC, newer.address,
                 false, newer.command, newer.isChannel ? newer.channelNumber : 0));
-            queue.removeNewest();
-            queue.removeNewest();
+            queue.removeOldest();
+            queue.removeOldest();
             return messages;
         }
 
         if(isIdle(newer))
         {
-            queue.removeNewest();
-            queue.removeNewest();
+            queue.removeOldest();
+            queue.removeOldest();
             queue.add(oldest);
             return messages;
         }
@@ -242,8 +190,8 @@ public class MotorolaTypeIIMessageFactory
         if(subType != null)
         {
             messages.add(createMessage(subType, oldest.address, oldest.isGroup, oldest.command, newer.address));
-            queue.removeNewest();
-            queue.removeNewest();
+            queue.removeOldest();
+            queue.removeOldest();
             return messages;
         }
 
@@ -259,8 +207,8 @@ public class MotorolaTypeIIMessageFactory
         {
             messages.add(createGrantMessage(MotorolaTypeIIMessageType.DIGITAL_GROUP_GRANT,
                 oldest.address, true, oldest.command, newer.channelNumber, newer.address));
-            queue.removeNewest();
-            queue.removeNewest();
+            queue.removeOldest();
+            queue.removeOldest();
             return messages;
         }
 
@@ -268,15 +216,15 @@ public class MotorolaTypeIIMessageFactory
         {
             messages.add(createGrantMessage(MotorolaTypeIIMessageType.DIGITAL_PRIVATE_CALL,
                 oldest.address, false, oldest.command, newer.isChannel ? newer.channelNumber : 0, newer.address));
-            queue.removeNewest();
-            queue.removeNewest();
+            queue.removeOldest();
+            queue.removeOldest();
             return messages;
         }
 
         if(isIdle(newer))
         {
-            queue.removeNewest();
-            queue.removeNewest();
+            queue.removeOldest();
+            queue.removeOldest();
             queue.add(oldest);
             return messages;
         }
@@ -287,8 +235,8 @@ public class MotorolaTypeIIMessageFactory
             if(ringType != null)
             {
                 messages.add(createMessage(ringType, oldest.address, false, oldest.command, newer.address));
-                queue.removeNewest();
-                queue.removeNewest();
+                queue.removeOldest();
+                queue.removeOldest();
                 return messages;
             }
         }
@@ -450,11 +398,14 @@ public class MotorolaTypeIIMessageFactory
         List<MotorolaTypeIIMessage> messages = new ArrayList<>();
         MotorolaTypeIIMessageType type = null;
 
+        // One-OSW voice update (OP25: osw2_ch_rx and osw2_grp)
+        // Talkgroup is in address, channel is in command field
         if(osw.isChannel && osw.isGroup)
         {
             type = MotorolaTypeIIMessageType.GROUP_UPDATE;
         }
-        else if(!osw.isGroup && (osw.address & ADDR_CC_BROADCAST_MASK) == ADDR_CC_BROADCAST_VALUE)
+        // One-OSW control channel broadcast (OP25: osw2_ch_rx and not osw2_grp and addr mask 0x1F00)
+        else if(osw.isChannel && !osw.isGroup && (osw.address & ADDR_CC_BROADCAST_MASK) == ADDR_CC_BROADCAST_VALUE)
         {
             type = MotorolaTypeIIMessageType.CC_BROADCAST;
         }
@@ -462,17 +413,15 @@ public class MotorolaTypeIIMessageFactory
         {
             type = MotorolaTypeIIMessageType.SYSTEM_ID;
         }
-        else if(osw.command >= 0x360 && osw.command <= 0x39F && !osw.isGroup)
+        // AMSS - OP25 does NOT check group flag
+        else if(osw.command >= 0x360 && osw.command <= 0x39F)
         {
             type = MotorolaTypeIIMessageType.AMSS;
         }
-        else if(osw.command == CMD_NETWORK_STATUS && !osw.isGroup)
+        // NETWORK_STATUS and SYSTEM_STATUS - OP25 does NOT check group flag (line 1692)
+        else if(osw.command == CMD_NETWORK_STATUS || osw.command == CMD_SYSTEM_STATUS)
         {
-            type = MotorolaTypeIIMessageType.NETWORK_STATUS;
-        }
-        else if(osw.command == CMD_SYSTEM_STATUS && !osw.isGroup)
-        {
-            type = MotorolaTypeIIMessageType.SYSTEM_STATUS;
+            type = (osw.command == CMD_SYSTEM_STATUS) ? MotorolaTypeIIMessageType.SYSTEM_STATUS : MotorolaTypeIIMessageType.NETWORK_STATUS;
         }
         else if(osw.command == CMD_GROUP_BUSY && osw.isGroup)
         {
@@ -501,10 +450,16 @@ public class MotorolaTypeIIMessageFactory
 
         if(type != null)
         {
-            // For GROUP_UPDATE, address field contains the channel number
-            int channelNumber = (type == MotorolaTypeIIMessageType.GROUP_UPDATE) ? (osw.address & 0x3FF) : 0;
+            // For GROUP_UPDATE, talkgroup is in address, channel is in command field (osw.channelNumber)
+            // For CC_BROADCAST, channel is in command field
+            int channelNumber = osw.isChannel ? osw.channelNumber : 0;
             messages.add(createMessage(type, osw.address, osw.isGroup, osw.command, channelNumber));
-            queue.removeNewest();
+            queue.removeOldest();
+        }
+        else
+        {
+            // No type matched - advance queue to prevent getting stuck
+            queue.removeOldest();
         }
 
         return messages;
