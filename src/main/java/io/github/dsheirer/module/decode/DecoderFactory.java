@@ -112,6 +112,7 @@ import io.github.dsheirer.module.decode.tait.Tait1200MessageFilter;
 import io.github.dsheirer.module.decode.traffic.TrafficChannelManager;
 import io.github.dsheirer.module.demodulate.fm.FMDemodulatorModule;
 import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.source.SourceType;
 import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
 import io.github.dsheirer.source.tuner.channel.rotation.ChannelRotationMonitor;
@@ -504,7 +505,7 @@ public class DecoderFactory
         {
             DecodeConfigNBFM nbfmConfig = new DecodeConfigNBFM();
             modules.add(new NBFMDecoder(nbfmConfig));
-            modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig));
+            modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig, false, Protocol.MOTOROLA_TYPE_II));
             modules.add(new AudioModule(aliasList, 0, 60000, AUDIO_FILTER_ENABLE));
         }
         else

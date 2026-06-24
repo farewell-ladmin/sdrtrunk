@@ -3,9 +3,13 @@ package io.github.dsheirer.module.decode.moto.message;
 
 import io.github.dsheirer.bits.CorrectedBinaryMessage;
 import io.github.dsheirer.identifier.Identifier;
+import io.github.dsheirer.identifier.Role;
+import io.github.dsheirer.module.decode.moto.identifier.MotorolaTypeIIRadioIdentifier;
+import io.github.dsheirer.module.decode.moto.identifier.MotorolaTypeIITalkgroup;
 import io.github.dsheirer.message.Message;
 import io.github.dsheirer.protocol.Protocol;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -15,6 +19,7 @@ public class MotorolaTypeIIMessage extends Message
     private boolean mIsGroup;
     private int mCommand;
     private int mChannelNumber;
+    private int mSourceAddress;
     private CorrectedBinaryMessage mRawData;
     private boolean mValid;
     private MotorolaTypeIIMessageType mMessageType;
@@ -31,13 +36,20 @@ public class MotorolaTypeIIMessage extends Message
     }
 
     public MotorolaTypeIIMessage(int address, boolean isGroup, int command, int channelNumber,
-                                 CorrectedBinaryMessage rawData, boolean valid, MotorolaTypeIIMessageType messageType)
+                                  CorrectedBinaryMessage rawData, boolean valid, MotorolaTypeIIMessageType messageType)
+    {
+        this(address, isGroup, command, channelNumber, 0, rawData, valid, messageType);
+    }
+
+    public MotorolaTypeIIMessage(int address, boolean isGroup, int command, int channelNumber, int sourceAddress,
+                                  CorrectedBinaryMessage rawData, boolean valid, MotorolaTypeIIMessageType messageType)
     {
         super();
         mAddress = address;
         mIsGroup = isGroup;
         mCommand = command;
         mChannelNumber = channelNumber;
+        mSourceAddress = sourceAddress;
         mRawData = rawData;
         mValid = valid;
         mMessageType = messageType;
@@ -61,6 +73,11 @@ public class MotorolaTypeIIMessage extends Message
     public int getChannelNumber()
     {
         return mChannelNumber;
+    }
+
+    public int getSourceAddress()
+    {
+        return mSourceAddress;
     }
 
     public CorrectedBinaryMessage getRawData()
@@ -96,11 +113,19 @@ public class MotorolaTypeIIMessage extends Message
             case ANALOG_GROUP_GRANT:
             case DIGITAL_GROUP_GRANT:
                 sb.append(" TG:").append(String.format("0x%04X", mAddress));
+                if(mSourceAddress > 0)
+                {
+                    sb.append(" SRC:").append(String.format("0x%04X", mSourceAddress));
+                }
                 sb.append(" CH:").append(String.format("0x%03X", mChannelNumber));
                 break;
             case ANALOG_PRIVATE_CALL:
             case DIGITAL_PRIVATE_CALL:
-                sb.append(" RID:").append(String.format("0x%04X", mAddress));
+                sb.append(" TO:").append(String.format("0x%04X", mAddress));
+                if(mSourceAddress > 0)
+                {
+                    sb.append(" FROM:").append(String.format("0x%04X", mSourceAddress));
+                }
                 sb.append(" CH:").append(String.format("0x%03X", mChannelNumber));
                 break;
             case GROUP_UPDATE:
@@ -150,6 +175,33 @@ public class MotorolaTypeIIMessage extends Message
     @Override
     public List<Identifier> getIdentifiers()
     {
-        return Collections.emptyList();
+        switch(mMessageType)
+        {
+            case ANALOG_GROUP_GRANT:
+            case DIGITAL_GROUP_GRANT:
+            case GROUP_UPDATE:
+                List<Identifier> groupIdentifiers = new ArrayList<>();
+                groupIdentifiers.add(new MotorolaTypeIITalkgroup(mAddress));
+
+                if(mSourceAddress > 0)
+                {
+                    groupIdentifiers.add(new MotorolaTypeIIRadioIdentifier(mSourceAddress, Role.FROM));
+                }
+
+                return groupIdentifiers;
+            case ANALOG_PRIVATE_CALL:
+            case DIGITAL_PRIVATE_CALL:
+                List<Identifier> privateCallIdentifiers = new ArrayList<>();
+                privateCallIdentifiers.add(new MotorolaTypeIIRadioIdentifier(mAddress, Role.TO));
+
+                if(mSourceAddress > 0)
+                {
+                    privateCallIdentifiers.add(new MotorolaTypeIIRadioIdentifier(mSourceAddress, Role.FROM));
+                }
+
+                return privateCallIdentifiers;
+            default:
+                return Collections.emptyList();
+        }
     }
 }

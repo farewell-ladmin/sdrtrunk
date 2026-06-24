@@ -26,6 +26,7 @@ import io.github.dsheirer.identifier.Role;
 import io.github.dsheirer.identifier.string.SimpleStringIdentifier;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.analog.AnalogDecoderState;
+import io.github.dsheirer.protocol.Protocol;
 
 /**
  * NBFM decoder state
@@ -35,6 +36,7 @@ public class NBFMDecoderState extends AnalogDecoderState
     private String mChannelName;
     private Identifier mChannelNameIdentifier;
     private Identifier mTalkgroupIdentifier;
+    private Protocol mProtocol = Protocol.UNKNOWN;
 
     /**
      * Constructs an instance
@@ -43,9 +45,16 @@ public class NBFMDecoderState extends AnalogDecoderState
      */
     public NBFMDecoderState(String channelName, DecodeConfigNBFM decodeConfig)
     {
+        this(channelName, decodeConfig, true, Protocol.UNKNOWN);
+    }
+
+    public NBFMDecoderState(String channelName, DecodeConfigNBFM decodeConfig, boolean useConfiguredTalkgroup,
+                            Protocol protocol)
+    {
         mChannelName = (channelName != null && !channelName.isEmpty()) ? channelName : "NBFM CHANNEL";
         mChannelNameIdentifier = new SimpleStringIdentifier(mChannelName, IdentifierClass.CONFIGURATION, Form.CHANNEL_NAME, Role.ANY);
-        mTalkgroupIdentifier = new NBFMTalkgroup(decodeConfig.getTalkgroup());
+        mTalkgroupIdentifier = useConfiguredTalkgroup ? new NBFMTalkgroup(decodeConfig.getTalkgroup()) : null;
+        mProtocol = protocol != null ? protocol : Protocol.UNKNOWN;
     }
 
     @Override
@@ -64,6 +73,12 @@ public class NBFMDecoderState extends AnalogDecoderState
     protected Identifier getTalkgroupIdentifier()
     {
         return mTalkgroupIdentifier;
+    }
+
+    @Override
+    protected Protocol getProtocol()
+    {
+        return mProtocol;
     }
 
     @Override

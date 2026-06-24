@@ -301,7 +301,7 @@ public class MotorolaTypeIIConfigurationEditor extends ChannelConfigurationEdito
         {
             mBandplanComboBox = new ComboBox<>();
             mBandplanComboBox.getItems().addAll(BandplanType.values());
-            mBandplanComboBox.getSelectionModel().select(BandplanType.EIGHT_HUNDRED_REBANTED);
+            mBandplanComboBox.getSelectionModel().select(BandplanType.EIGHT_HUNDRED_REBANDED);
             mBandplanComboBox.getSelectionModel().selectedItemProperty()
                 .addListener((observable, oldValue, newValue) -> {
                     modifiedProperty().set(true);
@@ -437,7 +437,7 @@ public class MotorolaTypeIIConfigurationEditor extends ChannelConfigurationEdito
         }
         else
         {
-            getBandplanComboBox().getSelectionModel().select(BandplanType.EIGHT_HUNDRED_REBANTED);
+            getBandplanComboBox().getSelectionModel().select(BandplanType.EIGHT_HUNDRED_REBANDED);
             getObtBaseFrequencyField().setText("");
             getObtSpacingField().setText("");
             getObtOffsetField().setText("");

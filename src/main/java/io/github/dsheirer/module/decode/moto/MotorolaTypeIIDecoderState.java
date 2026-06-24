@@ -14,7 +14,6 @@ import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.event.DecodeEvent;
 import io.github.dsheirer.module.decode.event.DecodeEventType;
 import io.github.dsheirer.module.decode.moto.channel.MotorolaTypeIIChannel;
-import io.github.dsheirer.module.decode.moto.identifier.MotorolaTypeIITalkgroup;
 import io.github.dsheirer.module.decode.moto.message.MotorolaTypeIIMessage;
 import io.github.dsheirer.module.decode.moto.message.MotorolaTypeIIMessageType;
 import org.slf4j.Logger;
@@ -24,6 +23,7 @@ public class MotorolaTypeIIDecoderState extends DecoderState
 {
     private final static Logger mLog = LoggerFactory.getLogger(MotorolaTypeIIDecoderState.class);
     private static final int STATS_LOG_INTERVAL = 1000;
+    private static final double[] CONNECT_TONES = {105.88, 76.60, 83.72, 90.00, 97.30, 116.13, 128.57, 138.46};
 
     private final MotorolaTypeIITrafficChannelManager mTrafficChannelManager;
     private final ChannelType mChannelType;
@@ -53,7 +53,7 @@ public class MotorolaTypeIIDecoderState extends DecoderState
 
         mBandplan = config != null ? new Bandplan(config.getBandplanType(),
                 config.getObtBaseFrequency(), config.getObtSpacing(), config.getObtOffset()) :
-                new Bandplan(BandplanType.EIGHT_HUNDRED_REBANTED);
+                new Bandplan(BandplanType.EIGHT_HUNDRED_REBANDED);
     }
 
     public int getSystemId()
@@ -118,6 +118,8 @@ public class MotorolaTypeIIDecoderState extends DecoderState
         {
             case ANALOG_GROUP_GRANT:
             case DIGITAL_GROUP_GRANT:
+            case ANALOG_PRIVATE_CALL:
+            case DIGITAL_PRIVATE_CALL:
                 processChannelGrant(moto);
                 break;
             case GROUP_UPDATE:
@@ -155,17 +157,22 @@ public class MotorolaTypeIIDecoderState extends DecoderState
 
         MutableIdentifierCollection ic = new MutableIdentifierCollection(getIdentifierCollection().getIdentifiers());
         ic.remove(IdentifierClass.USER);
-        ic.update(new MotorolaTypeIITalkgroup(talkgroup));
+        ic.update(message.getIdentifiers());
 
         MotorolaTypeIIChannel channel = new MotorolaTypeIIChannel(channelNumber, mBandplan);
 
-        String mode = message.getMessageType() == MotorolaTypeIIMessageType.DIGITAL_GROUP_GRANT ? "DIGITAL" : "ANALOG";
+        String mode = message.getMessageType() == MotorolaTypeIIMessageType.DIGITAL_GROUP_GRANT ||
+                message.getMessageType() == MotorolaTypeIIMessageType.DIGITAL_PRIVATE_CALL ? "DIGITAL" : "ANALOG";
+        boolean privateCall = message.getMessageType() == MotorolaTypeIIMessageType.ANALOG_PRIVATE_CALL ||
+                message.getMessageType() == MotorolaTypeIIMessageType.DIGITAL_PRIVATE_CALL;
+        String callType = privateCall ? "Private Call" : "Group Grant";
+        String addressLabel = privateCall ? " TO:" : " TG:";
         String freqStr = frequencyMHz > 0 ? String.format("%.4f MHz", frequencyMHz) : "unknown freq";
         DecodeEvent event = DecodeEvent.builder(DecodeEventType.CALL, message.getTimestamp())
                 .channel(channel)
                 .identifiers(ic)
-                .details(mode + " Group Grant CH:" + String.format("0x%03X", channelNumber) +
-                        " TG:" + String.format("0x%04X", talkgroup) + " " + freqStr)
+                .details(mode + " " + callType + " CH:" + String.format("0x%03X", channelNumber) +
+                        addressLabel + String.format("0x%04X", talkgroup) + " " + freqStr)
                 .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
                 .build();
         broadcast(event);
@@ -190,7 +197,7 @@ public class MotorolaTypeIIDecoderState extends DecoderState
 
         MutableIdentifierCollection ic = new MutableIdentifierCollection(getIdentifierCollection().getIdentifiers());
         ic.remove(IdentifierClass.USER);
-        ic.update(new MotorolaTypeIITalkgroup(talkgroup));
+        ic.update(message.getIdentifiers());
 
         MotorolaTypeIIChannel channel = new MotorolaTypeIIChannel(channelNumber, mBandplan);
 
@@ -260,6 +267,22 @@ public class MotorolaTypeIIDecoderState extends DecoderState
 
     private void processStatus(MotorolaTypeIIMessage message)
     {
+        int opcode = (message.getAddress() & 0xE000) >> 13;
+        int data = message.getAddress() & 0x1FFF;
+
+        if(opcode == 1)
+        {
+            boolean typeII = (data & 0x1000) != 0;
+            int dispatchTimeout = (data & 0x0E00) >> 9;
+            int connectToneIndex = (data & 0x00E0) >> 5;
+            int interconnectTimeout = data & 0x001F;
+            double connectTone = CONNECT_TONES[connectToneIndex];
+
+            setConnectTone(connectTone);
+            mLog.debug("Moto T2 {} type={} connectTone={} dispatchTimeout={} interconnectTimeout={}",
+                    message.getMessageType(), typeII ? "II" : "I", connectTone, dispatchTimeout, interconnectTimeout);
+        }
+
         broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
     }
 

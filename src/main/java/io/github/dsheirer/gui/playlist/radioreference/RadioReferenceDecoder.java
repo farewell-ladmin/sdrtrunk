@@ -25,6 +25,7 @@ import io.github.dsheirer.identifier.talkgroup.TalkgroupIdentifier;
 import io.github.dsheirer.identifier.talkgroup.UnknownTalkgroupIdentifier;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.dmr.channel.TimeslotFrequency;
+import io.github.dsheirer.module.decode.moto.identifier.MotorolaTypeIITalkgroup;
 import io.github.dsheirer.module.decode.mpt1327.identifier.MPT1327Talkgroup;
 import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup;
 import io.github.dsheirer.module.decode.passport.identifier.PassportTalkgroup;
@@ -150,6 +151,8 @@ public class RadioReferenceDecoder
                 return LTRTalkgroup.create(value);
             case MPT1327:
                 return MPT1327Talkgroup.createTo(value);
+            case MOTOROLA_TYPE_II:
+                return new MotorolaTypeIITalkgroup(value);
             case PASSPORT:
                 return PassportTalkgroup.create(value);
             default:

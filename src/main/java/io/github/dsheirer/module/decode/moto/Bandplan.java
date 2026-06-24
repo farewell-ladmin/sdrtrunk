@@ -74,7 +74,7 @@ public class Bandplan
     {
         switch(mBandplanType)
         {
-            case EIGHT_HUNDRED_REBANTED:
+            case EIGHT_HUNDRED_REBANDED:
                 return get800RebandedFrequency(channel);
             case EIGHT_HUNDRED_DOMESTIC:
                 return get800DomesticFrequency(channel);

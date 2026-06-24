@@ -172,7 +172,7 @@ public class OswExtractor
             return;
         }
 
-        List<MotorolaTypeIIMessage> messages = MotorolaTypeIIMessageFactory.process(mOswQueue, null);
+        List<MotorolaTypeIIMessage> messages = MotorolaTypeIIMessageFactory.process(mOswQueue, mBandplan);
 
         for(MotorolaTypeIIMessage message : messages)
         {

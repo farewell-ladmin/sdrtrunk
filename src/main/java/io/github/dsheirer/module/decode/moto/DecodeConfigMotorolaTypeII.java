@@ -20,7 +20,7 @@ public class DecodeConfigMotorolaTypeII extends DecodeConfiguration
     private static final int TRAFFIC_CHANNEL_POOL_SIZE_MIN = 1;
     private static final int TRAFFIC_CHANNEL_POOL_SIZE_MAX = 16;
 
-    private BandplanType mBandplanType = BandplanType.EIGHT_HUNDRED_REBANTED;
+    private BandplanType mBandplanType = BandplanType.EIGHT_HUNDRED_REBANDED;
     private double mObtBaseFrequency;
     private double mObtSpacing;
     private int mObtOffset;
@@ -45,7 +45,7 @@ public class DecodeConfigMotorolaTypeII extends DecodeConfiguration
 
     public void setBandplanType(BandplanType bandplanType)
     {
-        mBandplanType = bandplanType != null ? bandplanType : BandplanType.EIGHT_HUNDRED_REBANTED;
+        mBandplanType = bandplanType != null ? bandplanType : BandplanType.EIGHT_HUNDRED_REBANDED;
     }
 
     @JacksonXmlProperty(isAttribute = false, localName = "obt_base_frequency")

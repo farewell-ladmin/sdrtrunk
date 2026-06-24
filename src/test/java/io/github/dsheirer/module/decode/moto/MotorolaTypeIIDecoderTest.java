@@ -61,7 +61,7 @@ public class MotorolaTypeIIDecoderTest
         System.out.println("Duration: " + (audioSamples.length / SAMPLE_RATE) + " seconds");
 
         // Create OSW extractor with bandplan
-        Bandplan bandplan = new Bandplan(BandplanType.EIGHT_HUNDRED_REBANTED);
+        Bandplan bandplan = new Bandplan(BandplanType.EIGHT_HUNDRED_REBANDED);
         OswExtractor extractor = new OswExtractor(bandplan);
         extractor.setSampleRate(SAMPLE_RATE);
 

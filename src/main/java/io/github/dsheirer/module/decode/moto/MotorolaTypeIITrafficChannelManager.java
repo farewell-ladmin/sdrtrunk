@@ -83,7 +83,8 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
         {
             if(isSameTalkgroup(identifierCollection, existingEvent.getIdentifierCollection()))
             {
-                existingEvent.end(message.getTimestamp());
+                existingEvent.update(message.getTimestamp());
+                broadcast(existingEvent);
                 return;
             }
             else if(mAllocatedTrafficChannelMap.containsKey(channel))
@@ -134,7 +135,8 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
 
         if(existingEvent != null)
         {
-            existingEvent.end(message.getTimestamp());
+            existingEvent.update(message.getTimestamp());
+            broadcast(existingEvent);
         }
     }
 
