@@ -42,8 +42,11 @@ public class OswExtractor
 
     private int mSyncShiftReg;
     private int mPayloadBitCount;
+    private int mTrailingSyncBitCount;
+    private int mTrailingSyncShiftReg;
     private final int[] mPayloadBuffer = new int[PAYLOAD_BITS];
     private boolean mCollecting;
+    private boolean mCollectingTrailingSync;
 
     private int mConsecutiveBadOsw;
     private final OswQueue mOswQueue;
@@ -63,7 +66,10 @@ public class OswExtractor
         mAfc = 0;
         mSyncShiftReg = 0;
         mPayloadBitCount = 0;
+        mTrailingSyncBitCount = 0;
+        mTrailingSyncShiftReg = 0;
         mCollecting = false;
+        mCollectingTrailingSync = false;
         mConsecutiveBadOsw = 0;
         mLog.info("OSW extractor sample rate: " + sampleRate + " samples/symbol: " + mSamplesPerSymbol);
     }
@@ -91,12 +97,47 @@ public class OswExtractor
     {
         if(mCollecting)
         {
-            mPayloadBuffer[mPayloadBitCount++] = bit;
-
-            if(mPayloadBitCount >= PAYLOAD_BITS)
+            if(mCollectingTrailingSync)
             {
-                processFrame(messageListener);
-                mCollecting = false;
+                mTrailingSyncShiftReg = ((mTrailingSyncShiftReg << 1) | bit) & 0xFF;
+                mTrailingSyncBitCount++;
+
+                if(mTrailingSyncBitCount >= 8)
+                {
+                    if(mTrailingSyncShiftReg == SYNC_WORD)
+                    {
+                        processFrame(messageListener);
+
+                        // The trailing sync is also the leading sync for the next OSW.
+                        mCollecting = true;
+                        mCollectingTrailingSync = false;
+                        mPayloadBitCount = 0;
+                        mTrailingSyncBitCount = 0;
+                        mTrailingSyncShiftReg = 0;
+                        mSyncShiftReg = SYNC_WORD;
+                    }
+                    else
+                    {
+                        processBadOsw(messageListener, "end sync failure");
+                        mCollecting = false;
+                        mCollectingTrailingSync = false;
+                        mPayloadBitCount = 0;
+                        mTrailingSyncBitCount = 0;
+                        mSyncShiftReg = mTrailingSyncShiftReg;
+                        mTrailingSyncShiftReg = 0;
+                    }
+                }
+            }
+            else
+            {
+                mPayloadBuffer[mPayloadBitCount++] = bit;
+
+                if(mPayloadBitCount >= PAYLOAD_BITS)
+                {
+                    mCollectingTrailingSync = true;
+                    mTrailingSyncBitCount = 0;
+                    mTrailingSyncShiftReg = 0;
+                }
             }
         }
         else
@@ -130,13 +171,7 @@ public class OswExtractor
 
         if(crcAccum != receivedCrc)
         {
-            mConsecutiveBadOsw++;
-            mOswQueue.addReset();
-            if(mConsecutiveBadOsw >= MAX_BAD_OSW)
-            {
-                mLog.warn("OSW: " + mConsecutiveBadOsw + " consecutive CRC failures");
-            }
-            processQueue(messageListener);
+            processBadOsw(messageListener, "CRC failure");
             return;
         }
 
@@ -162,6 +197,19 @@ public class OswExtractor
 
         OswEntry entry = new OswEntry(address, isGroup, command, System.currentTimeMillis(), mBandplan);
         mOswQueue.add(entry);
+        processQueue(messageListener);
+    }
+
+    private void processBadOsw(Listener<IMessage> messageListener, String reason)
+    {
+        mConsecutiveBadOsw++;
+        mOswQueue.addReset();
+
+        if(mConsecutiveBadOsw >= MAX_BAD_OSW)
+        {
+            mLog.warn("OSW: " + mConsecutiveBadOsw + " consecutive " + reason + "s");
+        }
+
         processQueue(messageListener);
     }
 

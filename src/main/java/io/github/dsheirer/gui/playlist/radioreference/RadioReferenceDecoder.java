@@ -435,14 +435,16 @@ public class RadioReferenceDecoder
             case "Project 25":
                 return Protocol.APCO25;
             case "Motorola":
-                if(voice.getName().contentEquals("Analog and APCO-25 Common Air Interface") ||
-                    voice.getName().contentEquals("APCO-25 Common Air Interface Exclusive"))
+                if(voice == null || voice.getName() == null)
                 {
-                    return Protocol.APCO25;
+                    return Protocol.UNKNOWN;
                 }
-                else if(voice.getName().contentEquals("Analog") ||
+                else if(voice.getName().contentEquals("Analog and APCO-25 Common Air Interface") ||
+                    voice.getName().contentEquals("APCO-25 Common Air Interface Exclusive") ||
+                    voice.getName().contentEquals("Analog") ||
                     voice.getName().contentEquals("Analog/FM"))
                 {
+                    // Legacy Motorola systems use a Type II control channel even when voice channels carry P25 CAI.
                     return Protocol.MOTOROLA_TYPE_II;
                 }
                 break;
@@ -519,11 +521,8 @@ public class RadioReferenceDecoder
                     break;
                 case "Motorola":
                     if(voice.getName().contentEquals("Analog and APCO-25 Common Air Interface") ||
-                        voice.getName().contentEquals("APCO-25 Common Air Interface Exclusive"))
-                    {
-                        return DecoderType.P25_PHASE1;
-                    }
-                    else if(voice.getName().contentEquals("Analog") ||
+                        voice.getName().contentEquals("APCO-25 Common Air Interface Exclusive") ||
+                        voice.getName().contentEquals("Analog") ||
                         voice.getName().contentEquals("Analog/FM"))
                     {
                         return DecoderType.MOTOROLA_TYPE_II;
