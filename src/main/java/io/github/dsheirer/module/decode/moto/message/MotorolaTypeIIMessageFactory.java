@@ -87,6 +87,18 @@ public class MotorolaTypeIIMessageFactory
             return processThreeOswSystem(queue, osw0, osw1, osw2);
         }
 
+        // 3-OSW CONTROL CHANNEL: osw0=0x308, osw1=0x30B (0x28xx grp), osw2=channel (0x1Fxx addr)
+        // OP25 lines 1127-1131
+        if(osw0.command == CMD_ANALOG_GRANT &&
+           osw1.command == CMD2_SYSTEM_ID_CC && osw1.isGroup &&
+           osw2.isChannel && !osw2.isGroup &&
+           (osw2.address & ADDR_CC_BROADCAST_MASK) == ADDR_CC_BROADCAST_VALUE &&
+           (osw1.address & ADDR_ALT_CC_MASK) == ADDR_ALT_CC_VALUE &&
+           (osw1.address & 0x3FF) == osw2.command)
+        {
+            return processThreeOswControlChannel(queue, osw0, osw1, osw2);
+        }
+
         // Check for 2-OSW analog grant or sub-command (cmd 0x308)
         // OP25: when osw0.cmd == 0x308, ALWAYS dispatch to processAnalogGrant
         // which checks for channel (grant) OR non-channel sub-commands (PATCH, AFFILIATION, etc.)
@@ -147,24 +159,51 @@ public class MotorolaTypeIIMessageFactory
         return messages;
     }
 
+    private static List<MotorolaTypeIIMessage> processThreeOswControlChannel(OswQueue queue, OswEntry osw0,
+                                                                                OswEntry osw1, OswEntry osw2)
+    {
+        List<MotorolaTypeIIMessage> messages = new ArrayList<>();
+
+        // osw0.address = system ID, osw2.command = channel number (CC frequency)
+        messages.add(createMessage(MotorolaTypeIIMessageType.CONTROL_CHANNEL, osw0.address,
+            false, osw0.command, osw2.command));
+
+        queue.removeOldest();
+        queue.removeOldest();
+        queue.removeOldest();
+        return messages;
+    }
+
     private static List<MotorolaTypeIIMessage> processAnalogGrant(OswQueue queue, OswEntry oldest, OswEntry newer)
     {
         List<MotorolaTypeIIMessage> messages = new ArrayList<>();
 
-        // OP25: oldest OSW has talkgroup in address, newer OSW has channel in command and source RID in address
-        if(newer.isChannel && oldest.isGroup && oldest.address != 0 && newer.address != 0)
+        // 2-OSW CONTROL CHANNEL: oldest=0x308, newer=channel with 0x1Fxx addr (CC broadcast pattern)
+        // OP25 lines 985-993
+        if(newer.isChannel && (newer.address & ADDR_CC_BROADCAST_MASK) == ADDR_CC_BROADCAST_VALUE)
         {
-            messages.add(createGrantMessage(MotorolaTypeIIMessageType.ANALOG_GROUP_GRANT,
-                oldest.address, true, oldest.command, newer.channelNumber, newer.address));
+            messages.add(createMessage(MotorolaTypeIIMessageType.CONTROL_CHANNEL, oldest.address,
+                false, oldest.command, newer.channelNumber));
             queue.removeOldest();
             queue.removeOldest();
             return messages;
         }
 
-        if(!newer.isGroup && oldest.address != 0 && newer.address != 0)
+        // OP25: 0x308 OSW (oldest) has source RID in address; channel cmd OSW (newer) has talkgroup in address
+        if(newer.isChannel && oldest.isGroup && oldest.address != 0 && newer.address != 0)
         {
+            messages.add(createGrantMessage(MotorolaTypeIIMessageType.ANALOG_GROUP_GRANT,
+                newer.address, true, newer.command, newer.channelNumber, oldest.address));
+            queue.removeOldest();
+            queue.removeOldest();
+            return messages;
+        }
+
+        if(!newer.isGroup && newer.isChannel && oldest.address != 0 && newer.address != 0)
+        {
+            // Private call: 0x308 OSW has destination RID, channel cmd OSW has source RID
             messages.add(createGrantMessage(MotorolaTypeIIMessageType.ANALOG_PRIVATE_CALL,
-                oldest.address, false, oldest.command, newer.isChannel ? newer.channelNumber : 0, newer.address));
+                oldest.address, false, newer.command, newer.channelNumber, newer.address));
             queue.removeOldest();
             queue.removeOldest();
             return messages;
@@ -204,20 +243,21 @@ public class MotorolaTypeIIMessageFactory
     {
         List<MotorolaTypeIIMessage> messages = new ArrayList<>();
 
-        // OP25: oldest OSW has talkgroup in address, newer OSW has channel in command and source RID in address
+        // OP25: 0x321 OSW (oldest) has source RID in address; channel cmd OSW (newer) has talkgroup in address
         if(newer.isChannel && oldest.isGroup && newer.isGroup && oldest.address != 0)
         {
             messages.add(createGrantMessage(MotorolaTypeIIMessageType.DIGITAL_GROUP_GRANT,
-                oldest.address, true, oldest.command, newer.channelNumber, newer.address));
+                newer.address, true, newer.command, newer.channelNumber, oldest.address));
             queue.removeOldest();
             queue.removeOldest();
             return messages;
         }
 
-        if(!newer.isGroup && oldest.address != 0 && newer.address != 0)
+        if(!newer.isGroup && newer.isChannel && oldest.address != 0 && newer.address != 0)
         {
+            // Private call: 0x321 OSW has destination RID, channel cmd OSW has source RID
             messages.add(createGrantMessage(MotorolaTypeIIMessageType.DIGITAL_PRIVATE_CALL,
-                oldest.address, false, oldest.command, newer.isChannel ? newer.channelNumber : 0, newer.address));
+                oldest.address, false, newer.command, newer.channelNumber, newer.address));
             queue.removeOldest();
             queue.removeOldest();
             return messages;

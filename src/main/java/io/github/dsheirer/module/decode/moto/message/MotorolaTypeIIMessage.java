@@ -110,6 +110,10 @@ public class MotorolaTypeIIMessage extends Message
             case SYSTEM_ID:
                 sb.append(" SYS:").append(String.format("0x%04X", mAddress));
                 break;
+            case CONTROL_CHANNEL:
+                sb.append(" SYS:").append(String.format("0x%04X", mAddress));
+                sb.append(" CH:").append(String.format("0x%03X", mChannelNumber));
+                break;
             case AMSS:
                 int siteId = mCommand - 0x360 + 1;
                 sb.append(" SITE:").append(siteId);

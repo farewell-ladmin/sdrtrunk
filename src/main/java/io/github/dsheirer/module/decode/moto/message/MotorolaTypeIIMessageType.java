@@ -45,8 +45,9 @@ public enum MotorolaTypeIIMessageType
     MESSAGE,                    // 0x308 + 0x311
 
     // Three-OSW messages
-    ADJACENT_SITE,              // 0x308 + 0x308 + 0x30B (addr mask 0x6000)
+    ADJACENT_SITE,              // 0x308 + 0x320 + 0x30B (addr mask 0x6000)
     SYSTEM_INFO,                // 0x320 + ... + 0x30B
+    CONTROL_CHANNEL,            // 0x308 + 0x30B (0x28xx) + channel (0x1Fxx addr)
 
     // Special
     UNKNOWN,                    // unrecognized message

@@ -133,6 +133,9 @@ public class MotorolaTypeIIDecoderState extends DecoderState
             case SYSTEM_STATUS:
                 processStatus(moto);
                 break;
+            case CONTROL_CHANNEL:
+                processControlChannel(moto);
+                break;
             case IDLE:
                 broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
                 break;
@@ -185,11 +188,16 @@ public class MotorolaTypeIIDecoderState extends DecoderState
         int talkgroup = message.getAddress();
         double frequencyMHz = mBandplan.getDownlinkFrequency(channelNumber);
 
+        MutableIdentifierCollection ic = new MutableIdentifierCollection(getIdentifierCollection().getIdentifiers());
+        ic.remove(IdentifierClass.USER);
+        ic.update(new MotorolaTypeIITalkgroup(talkgroup));
+
         MotorolaTypeIIChannel channel = new MotorolaTypeIIChannel(channelNumber, mBandplan);
 
         String freqStr = frequencyMHz > 0 ? String.format("%.4f MHz", frequencyMHz) : "unknown freq";
         DecodeEvent event = DecodeEvent.builder(DecodeEventType.CALL_IN_PROGRESS, message.getTimestamp())
                 .channel(channel)
+                .identifiers(ic)
                 .details("Group Update TG:" + String.format("0x%04X", talkgroup) + 
                          " CH:" + String.format("0x%03X", channelNumber) + " " + freqStr)
                 .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
@@ -215,7 +223,10 @@ public class MotorolaTypeIIDecoderState extends DecoderState
             mLog.info("Moto T2 System ID decoded: 0x{}", Integer.toHexString(mSystemId));
         }
 
+        MutableIdentifierCollection ic = new MutableIdentifierCollection(getIdentifierCollection().getIdentifiers());
+
         DecodeEvent event = DecodeEvent.builder(DecodeEventType.STATUS, message.getTimestamp())
+                .identifiers(ic)
                 .details("System ID: " + String.format("0x%04X", mSystemId))
                 .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
                 .build();
@@ -235,7 +246,10 @@ public class MotorolaTypeIIDecoderState extends DecoderState
                     Integer.toHexString(message.getCommand()));
         }
 
+        MutableIdentifierCollection ic = new MutableIdentifierCollection(getIdentifierCollection().getIdentifiers());
+
         DecodeEvent event = DecodeEvent.builder(DecodeEventType.STATUS, message.getTimestamp())
+                .identifiers(ic)
                 .details("AMSS Site ID: " + mSiteId)
                 .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
                 .build();
@@ -246,12 +260,15 @@ public class MotorolaTypeIIDecoderState extends DecoderState
 
     private void processStatus(MotorolaTypeIIMessage message)
     {
-        DecodeEvent event = DecodeEvent.builder(DecodeEventType.STATUS, message.getTimestamp())
-                .details(message.getMessageType().name())
-                .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
-                .build();
-        broadcast(event);
+        broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
+    }
 
+    private void processControlChannel(MotorolaTypeIIMessage message)
+    {
+        int systemId = message.getAddress();
+        mSystemId = systemId;
+        mSiteId = 0;
+        mLog.info("Moto T2 CONTROL CHANNEL: System 0x{}", String.format("%04X", systemId));
         broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
     }
 
