@@ -21,9 +21,72 @@ sudo ln -s /opt/homebrew/Cellar/libusb/HEAD-9ceaa52/lib/libusb-1.0.0.dylib /opt/
 
 # sdrtrunk-vibes Fork
 
-This fork exists mostly so I could see if I could vibe code a fix for some specific P25P1/P2 bugs related to incorrect encryption detection I was having and implement NBFM fixes for the noise burst at the end. It turned into an extremely ambitious attempt to implement EDACS ProVoice which, so far, is not going well. 
+This fork started as an attempt to fix P25P1/P2 encryption detection and NBFM squelch tail issues. It grew into implementing EDACS ProVoice (incomplete — see below) and, more successfully, Motorola Type II trunking for SmartZone systems.
 
-The NBFM fix works though it's entirely possible that was fixed already in the nightly. Testing is underway to see if the fixes to encryption detection work since the "fix" was apparently like two lines of code.
+## Motorola Type II Trunking (MVP — Working)
+
+**Status:** Control channel decoding, CRC validation, message parsing, talkgroup extraction, alias support, and analog voice following are functional. Validated against a live Motorola SmartZone system (Massachusetts State Police) and cross-referenced with OP25. Digital voice channels and many SmartZone features remain unimplemented.
+
+### What's Implemented
+
+| Component | Status | Notes |
+|-----------|--------|-------|
+| FSK2 demodulation + OSW sync detection | Working | 48-bit OSW extraction from raw bitstream |
+| CRC validation | ~90.6% pass | Matches OP25 algorithm (polynomial 0x0225, init 0x0393, bit-inverted) |
+| End-of-frame sync validation | Working | Requires trailing 0xAC sync at expected boundary before CRC/parser processing |
+| 1-OSW messages | Working | IDLE, GROUP_UPDATE, CC_BROADCAST, GROUP_BUSY, EMERGENCY_BUSY, NETWORK_STATUS, SYSTEM_STATUS, AMSS, ROAMING, SYSTEM_ID, BSI_DIAGNOSTIC |
+| 2-OSW messages | Working | ANALOG_GROUP_GRANT, ANALOG_PRIVATE_CALL, DIGITAL_GROUP_GRANT, DIGITAL_PRIVATE_CALL, SYSTEM_ID_CC, AFFILIATION, DEAFFILIATION, PATCH, DATE_TIME, CONTROL_CHANNEL (2-OSW variant) |
+| 3-OSW messages | Working | ADJACENT_SITE, SYSTEM_INFO, CONTROL_CHANNEL (3-OSW variant) |
+| Bandplan-aware frequency calc | Working | 800 MHz Rebanded/Domestic/Splinter, 800 MHz International/Intl Splinter, 900 MHz, OBT |
+| Talkgroup extraction from grants | Working | Group TG as TO, source radio as FROM (P25 convention) |
+| Traffic channel allocation | Working | NBFM analog voice following with automatic teardown |
+| Alias support | Working | Add Identifier menu, talkgroup/radio validation, TG/radio editor formatters, display preferences |
+| Legacy alias compatibility | Working | Falls back to APCO25 alias maps for existing tagged aliases |
+| RadioReference import | Working | Legacy Motorola systems classify as MOTOROLA_TYPE_II; CoMIRS/Project 25 remains APCO25 |
+| Connect tone extraction | Working | Decoded from NETWORK_STATUS using OP25 SmartNet 8-tone table |
+| GUI configuration | Working | JavaFX editor with bandplan selection, OBT params, traffic pool, site config |
+| Decoder state machine | Working | CONTROL/CALL states, identifier tracking, statistics logging |
+| Now Playing integration | Working | Traffic events display correct TG/alias in both Events and Now Playing panels |
+
+### What's Not Working
+
+| Issue | Severity | Notes |
+|-------|----------|-------|
+| Digital traffic channels always use NBFM | High | No P25P1DecoderC4FM path — digital voice not implemented |
+| GROUP_BUSY / EMERGENCY_BUSY transitions to CONTROL instead of FADE | Medium | Should transition to State.FADE |
+| processStatus() partially implemented | Medium | Connect tone decoded; feature flags not tracked/displayed |
+| Adjacent site tracking / expiry / display | Medium | Messages parsed but not stored or surfaced in UI |
+| Patch group management | Medium | PATCH messages decoded but group map not maintained |
+| CONTROL_CHANNEL 2-OSW variant detection | Low | 3-OSW variant works; 2-OSW needs refinement |
+| Many SmartZone features missing | Low | Deaffiliation handling, idle tracking, denied/radio-check events |
+
+### Reference Implementations
+
+| Project | What Was Referenced |
+|---------|---------------------|
+| [OP25](https://github.com/boatbod/op25) | CRC algorithm, OSW extraction logic, SmartNet tone table, message dispatch patterns |
+| [Trunk Recorder](https://github.com/TrunkRecorder/trunk-recorder) | SmartNet parser structure, message type definitions |
+| DSD-FME | FM demodulation quality comparison |
+
+### Test System
+
+| Parameter | Value |
+|-----------|-------|
+| System | Massachusetts State Police (MSP) |
+| System ID | 0D14 |
+| Site | Metro Boston (005) |
+| Control channel | 854.5625 MHz |
+| Channel spacing | 25 kHz |
+| Emission designator | 20K0F1E |
+| Connect tone | 97.30 Hz |
+| Traffic | Analog + APCO-25 CAI (astro digital TGs) |
+
+### Known Issues from Live Testing
+
+- CRC error rate ~9.4% (vs OP25's ~3.9%) — OSW extraction needs further tuning
+- Some message types missing vs OP25: AFFILIATION, DEAFFILIATION, IDLE, DENIED, RADIO_CHECK
+- SYSTEM_ID_CC reports inconsistent values — needs investigation
+- CONTROL_CHANNEL detection partially split into sub-messages
 
 ## EDACS Trunking (Experimental — Incomplete)
 
