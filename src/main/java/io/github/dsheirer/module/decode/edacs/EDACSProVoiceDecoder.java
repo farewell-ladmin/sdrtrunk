@@ -54,19 +54,23 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSProVoiceDecoder.class);
 
-    private static final int DOTTING_BITS = 24;
     private static final int SYNC_BITS = 32;
     private static final int HEADER_BITS = 64 + 16 + 64;
     private static final int IMBE_BITS_PER_FRAME = 142;
     private static final int SPACER_BITS = 2;
     private static final int BF_BITS = 16;
     private static final int BITS_PER_IMBE = IMBE_BITS_PER_FRAME;
-    private static final int FRAME_BITS = DOTTING_BITS + SYNC_BITS + HEADER_BITS +
+    private static final int FRAME_BITS = SYNC_BITS + HEADER_BITS +
             (SPACER_BITS + IMBE_BITS_PER_FRAME) * 4 + BF_BITS + SPACER_BITS * 2;
 
-    /** Dotting detector: count consecutive bit alternations. */
-    private int mConsecutiveAlts = 0;
-    private boolean mLastBit = false;
+    /** Reference: DSD-FME dsd.h ProVoice sync constants. */
+    private static final String[] PROVOICE_SYNC_PATTERNS = new String[] {
+            "13131333111311311133113311331133",
+            "31313111333133133311331133113311",
+            "31131311331331111133131311311133",
+            "13313133113113333311313133133311"
+    };
+
     private int mFramePending = 0;
     private int mFrameBitCount = 0;
 
@@ -75,6 +79,7 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
     private int mFramesDetected = 0;
     private int mFramesDecoded = 0;
     private int mDecodeErrors = 0;
+    private int mSyncRejects = 0;
     private long mLastStatsTime = 0;
 
     private double mSamplesPerSymbol = 5.0;
@@ -188,16 +193,6 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
             mFrameBits[mFrameBitCount % mFrameBits.length] = bit;
             mFrameBitCount++;
 
-            if(bit != mLastBit)
-            {
-                mConsecutiveAlts++;
-            }
-            else
-            {
-                mConsecutiveAlts = 0;
-            }
-            mLastBit = bit;
-
             if(mFramePending > 0)
             {
                 mFramePending--;
@@ -207,9 +202,9 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
                 }
             }
 
-            if(mConsecutiveAlts >= DOTTING_BITS && mFramePending <= 0)
+            if(mFramePending <= 0 && hasSyncAtCurrentBit())
             {
-                mFramePending = FRAME_BITS - DOTTING_BITS;
+                mFramePending = FRAME_BITS - SYNC_BITS;
             }
 
             if(System.currentTimeMillis() - mLastStatsTime > 10000)
@@ -232,8 +227,14 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
             return;
         }
 
+        if(!hasValidSync())
+        {
+            mSyncRejects++;
+            return;
+        }
+
         int lid = readLid();
-        int[] offset = new int[] { DOTTING_BITS + SYNC_BITS + HEADER_BITS };
+        int[] offset = new int[] { SYNC_BITS + HEADER_BITS };
         int[][] grid1 = new int[7][24];
         int[][] grid2 = new int[7][24];
         fillImbePair(offset, grid1, grid2);
@@ -344,8 +345,8 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
         {
             return 0;
         }
-        // LID is at bit offset 24 (dotting) + 32 (sync) + 64 (initial data) = 120
-        int startIndex = (mFrameBitCount - FRAME_BITS + 120) % mFrameBits.length;
+        // LID is at bit offset 32 (sync) + 64 (initial data) = 96.
+        int startIndex = (mFrameBitCount - FRAME_BITS + 96) % mFrameBits.length;
         int lid = 0;
         for(int i = 0; i < 16; i++)
         {
@@ -357,9 +358,82 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
         return lid;
     }
 
+    private boolean hasValidSync()
+    {
+        for(String pattern : PROVOICE_SYNC_PATTERNS)
+        {
+            if(matchesSync(pattern, false) || matchesSync(pattern, true))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean matchesSync(String pattern, boolean invert)
+    {
+        for(int x = 0; x < SYNC_BITS; x++)
+        {
+            boolean expected = pattern.charAt(x) == '3';
+
+            if(invert)
+            {
+                expected = !expected;
+            }
+
+            if(readFrameBit(x) != expected)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private boolean hasSyncAtCurrentBit()
+    {
+        if(mFrameBitCount < SYNC_BITS)
+        {
+            return false;
+        }
+
+        for(String pattern : PROVOICE_SYNC_PATTERNS)
+        {
+            if(matchesTrailingSync(pattern, false) || matchesTrailingSync(pattern, true))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private boolean matchesTrailingSync(String pattern, boolean invert)
+    {
+        int start = mFrameBitCount - SYNC_BITS;
+        for(int x = 0; x < SYNC_BITS; x++)
+        {
+            boolean expected = pattern.charAt(x) == '3';
+
+            if(invert)
+            {
+                expected = !expected;
+            }
+
+            if(mFrameBits[(start + x) % mFrameBits.length] != expected)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public int getFramesDetected() { return mFramesDetected; }
     public int getFramesDecoded() { return mFramesDecoded; }
     public int getDecodeErrors() { return mDecodeErrors; }
+    public int getSyncRejects() { return mSyncRejects; }
 
     private float[] resample(float[] input, double inputRate, double outputRate)
     {

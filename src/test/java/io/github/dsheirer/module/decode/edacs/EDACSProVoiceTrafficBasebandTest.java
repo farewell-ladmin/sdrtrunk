@@ -98,9 +98,10 @@ public class EDACSProVoiceTrafficBasebandTest
         }
 
         System.out.println(String.format(Locale.US,
-                "%s | %.2fs @ %.0f Hz | detected=%d decoded=%d errors=%d messages=%d",
+                "%s | %.2fs @ %.0f Hz | detected=%d decoded=%d syncRejects=%d errors=%d messages=%d",
                 file.getName(), wav.i.length / wav.sampleRate, wav.sampleRate,
-                decoder.getFramesDetected(), decoder.getFramesDecoded(), decoder.getDecodeErrors(), messages.size()));
+                decoder.getFramesDetected(), decoder.getFramesDecoded(), decoder.getSyncRejects(),
+                decoder.getDecodeErrors(), messages.size()));
 
         return new DecodeResult(messages);
     }
