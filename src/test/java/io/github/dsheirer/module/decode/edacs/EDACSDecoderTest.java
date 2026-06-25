@@ -183,51 +183,73 @@ public class EDACSDecoderTest
         }
 
         Map<EDACSMessageType, Integer> histogram = new EnumMap<>(EDACSMessageType.class);
+        int known = 0;
         for(IMessage m : messages)
         {
             if(m instanceof EDACSMessage edacs)
             {
                 histogram.merge(edacs.getMessageType(), 1, Integer::sum);
+                if(edacs.getMessageType() != EDACSMessageType.UNKNOWN)
+                {
+                    known++;
+                }
             }
         }
-        System.out.println("\n--- Message type histogram ---");
+        System.out.println("\n--- Message type histogram (vs DSD-FME) ---");
+        Map<EDACSMessageType, Integer> dsdFme = dsdFmeHistogram();
         for(Map.Entry<EDACSMessageType, Integer> e : histogram.entrySet())
         {
-            System.out.println("  " + e.getKey() + ": " + e.getValue());
+            Integer expected = dsdFme.get(e.getKey());
+            String exp = expected == null ? "  n/a" : String.format("%4d", expected);
+            System.out.println(String.format("  %-26s %5d  (DSD-FME: %s)", e.getKey(), e.getValue(), exp));
         }
+        int classified = known;
+        int total = messages.size();
+        double knownPct = total > 0 ? (classified * 100.0 / total) : 0.0;
+        System.out.println(String.format("\nClassified: %d / %d (%.1f%%)  Unknown: %d",
+                classified, total, knownPct, total - classified));
 
-        // Spot check: the System Info message should report CC LCN 10
-        // (DSD-FME log shows MSG_2 [600C1CA] -> lcn=10).
-        boolean foundSystemInfo = false;
+        // Spot check key messages
+        System.out.println();
+        printFirstOfType(messages, EDACSMessageType.SYSTEM_INFO, "First SYSTEM_INFO");
+        printFirstOfType(messages, EDACSMessageType.EXTENDED_ADDRESSING, "First EXTENDED_ADDRESSING");
+        printFirstOfType(messages, EDACSMessageType.ADJACENT_SITE, "First ADJACENT_SITE");
+        printFirstOfType(messages, EDACSMessageType.DYNAMIC_REGROUP_PLAN, "First DYNAMIC_REGROUP_PLAN");
+        printFirstOfType(messages, EDACSMessageType.DIGITAL_GROUP_CALL, "First DIGITAL_GROUP_CALL");
+        printFirstOfType(messages, EDACSMessageType.ANALOG_GROUP_CALL, "First ANALOG_GROUP_CALL");
+        printFirstOfType(messages, EDACSMessageType.LOGIN, "First LOGIN");
+        printFirstOfType(messages, EDACSMessageType.INDIVIDUAL_CALL, "First INDIVIDUAL_CALL");
+        printFirstOfType(messages, EDACSMessageType.ALL_CALL, "First ALL_CALL");
+    }
+
+    private void printFirstOfType(List<IMessage> messages, EDACSMessageType type, String label)
+    {
         for(IMessage m : messages)
         {
-            if(m instanceof EDACSMessage edacs && edacs.getMessageType() == EDACSMessageType.SYSTEM_INFO)
+            if(m instanceof EDACSMessage edacs && edacs.getMessageType() == type)
             {
-                System.out.println("\nFirst SYSTEM_INFO: " + edacs);
-                foundSystemInfo = true;
-                break;
+                System.out.println(label + ": " + edacs);
+                return;
             }
         }
-        if(!foundSystemInfo)
-        {
-            System.out.println("\n(no SYSTEM_INFO messages decoded)");
-        }
+    }
 
-        // Spot check: Adjacent Site should report Site 01 LCN 01
-        boolean foundAdjSite = false;
-        for(IMessage m : messages)
-        {
-            if(m instanceof EDACSMessage edacs && edacs.getMessageType() == EDACSMessageType.ADJACENT_SITE)
-            {
-                System.out.println("First ADJACENT_SITE: " + edacs);
-                foundAdjSite = true;
-                break;
-            }
-        }
-        if(!foundAdjSite)
-        {
-            System.out.println("(no ADJACENT_SITE messages decoded)");
-        }
+    /**
+     * Reference DSD-FME message type histogram from dsd-output_v4.txt for
+     * the same 55 s MBTA recording. Used to compare the sdrtrunk decoder
+     * output against the DSD-FME reference.
+     */
+    private static Map<EDACSMessageType, Integer> dsdFmeHistogram()
+    {
+        Map<EDACSMessageType, Integer> map = new EnumMap<>(EDACSMessageType.class);
+        map.put(EDACSMessageType.EXTENDED_ADDRESSING, 684);
+        map.put(EDACSMessageType.SYSTEM_INFO, 452);
+        map.put(EDACSMessageType.DYNAMIC_REGROUP_PLAN, 300);
+        map.put(EDACSMessageType.ADJACENT_SITE, 149);
+        map.put(EDACSMessageType.DIGITAL_GROUP_CALL, 134);
+        map.put(EDACSMessageType.LOGIN, 7);
+        map.put(EDACSMessageType.CHANNEL_ASSIGNMENT, 6);
+        return map;
     }
 
     private float[] readWavAsFloat(File wavFile) throws Exception
