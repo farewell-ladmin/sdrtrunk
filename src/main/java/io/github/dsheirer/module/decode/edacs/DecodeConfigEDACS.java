@@ -15,6 +15,21 @@ public class DecodeConfigEDACS extends DecodeConfiguration
 {
     private static final int MAX_LCN = 25;
     private String mLcnFrequencies = "";
+    private VoiceMode mVoiceMode = VoiceMode.ANALOG;
+
+    public enum VoiceMode
+    {
+        /** Analog FM only (NBFM) */
+        ANALOG("Analog (NBFM)"),
+        /** ProVoice digital (IMBE 7100 via JMBE) */
+        PROVOICE("ProVoice (Digital)"),
+        /** Auto: ANALOG for MT1=0x06 grants, PROVOICE for MT1=0x03 grants */
+        AUTO("Auto (Analog/Digital by grant)");
+
+        private final String mLabel;
+        VoiceMode(String label) { mLabel = label; }
+        @Override public String toString() { return mLabel; }
+    }
 
     public DecodeConfigEDACS()
     {
@@ -35,6 +50,17 @@ public class DecodeConfigEDACS extends DecodeConfiguration
     public void setLcnFrequencies(String frequencies)
     {
         mLcnFrequencies = frequencies != null ? frequencies : "";
+    }
+
+    @JacksonXmlProperty(isAttribute = false, localName = "voiceMode")
+    public VoiceMode getVoiceMode()
+    {
+        return mVoiceMode;
+    }
+
+    public void setVoiceMode(VoiceMode mode)
+    {
+        mVoiceMode = mode != null ? mode : VoiceMode.ANALOG;
     }
 
     /**
@@ -87,6 +113,20 @@ public class DecodeConfigEDACS extends DecodeConfiguration
             }
         }
         return freqs;
+    }
+
+    /**
+     * Resolves the effective voice mode for a single channel grant. In
+     * AUTO mode this is selected by the digital flag on the grant
+     * (MT1=0x03 -> ProVoice, MT1=0x06 -> analog).
+     */
+    public VoiceMode resolveVoiceMode(boolean isDigitalGrant)
+    {
+        if(mVoiceMode == VoiceMode.AUTO)
+        {
+            return isDigitalGrant ? VoiceMode.PROVOICE : VoiceMode.ANALOG;
+        }
+        return mVoiceMode;
     }
 
     @JsonIgnore

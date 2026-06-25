@@ -1,0 +1,98 @@
+// Reference: DSD-FME provoice.c, sdrtrunk P25P1AudioModule
+package io.github.dsheirer.module.decode.edacs;
+
+import io.github.dsheirer.alias.AliasList;
+import io.github.dsheirer.audio.codec.mbe.ImbeAudioModule;
+import io.github.dsheirer.audio.squelch.SquelchState;
+import io.github.dsheirer.audio.squelch.SquelchStateEvent;
+import io.github.dsheirer.dsp.gain.NonClippingGain;
+import io.github.dsheirer.message.IMessage;
+import io.github.dsheirer.module.decode.edacs.message.EDACSProVoiceMessage;
+import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.sample.Listener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Audio module for EDACS ProVoice traffic channels. Receives
+ * {@link EDACSProVoiceMessage} instances from the
+ * {@link EDACSProVoiceDecoder}, decodes each of the 4 IMBE 7100
+ * voice frames via the JMBE {@code IMBEAudioCodec} (shared with the
+ * P25P1 audio path), and emits 80 ms of 8 kHz PCM audio per
+ * ProVoice frame.
+ */
+public class EDACSProVoiceAudioModule extends ImbeAudioModule
+{
+    private final static Logger mLog = LoggerFactory.getLogger(EDACSProVoiceAudioModule.class);
+
+    private final NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
+    private final SquelchStateListener mSquelchStateListener = new SquelchStateListener();
+    private int mFramesProcessed = 0;
+
+    public EDACSProVoiceAudioModule(UserPreferences userPreferences, AliasList aliasList)
+    {
+        super(userPreferences, aliasList);
+    }
+
+    @Override
+    protected int getTimeslot()
+    {
+        return 0;
+    }
+
+    @Override
+    public Listener<SquelchStateEvent> getSquelchStateListener()
+    {
+        return mSquelchStateListener;
+    }
+
+    @Override
+    public void reset()
+    {
+        getIdentifierCollection().clear();
+    }
+
+    @Override
+    public void start()
+    {
+    }
+
+    @Override
+    public void receive(IMessage message)
+    {
+        if(hasAudioCodec() && message instanceof EDACSProVoiceMessage pv && pv.isValid())
+        {
+            for(byte[] frame : pv.getImbeFrames())
+            {
+                try
+                {
+                    float[] audio = getAudioCodec().getAudio(frame);
+                    audio = mGain.apply(audio);
+                    addAudio(audio);
+                    mFramesProcessed++;
+                }
+                catch(Exception e)
+                {
+                    mLog.warn("ProVoice IMBE decode error: {}", e.getMessage());
+                }
+            }
+        }
+    }
+
+    public int getFramesProcessed()
+    {
+        return mFramesProcessed;
+    }
+
+    public class SquelchStateListener implements Listener<SquelchStateEvent>
+    {
+        @Override
+        public void receive(SquelchStateEvent event)
+        {
+            if(event.getSquelchState() == SquelchState.SQUELCH)
+            {
+                closeAudioSegment();
+            }
+        }
+    }
+}

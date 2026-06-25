@@ -489,11 +489,26 @@ public class DecoderFactory
     private static void processEDACS(UserPreferences userPreferences, Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
         if(channel.isTrafficChannel())
         {
-            // Analog traffic channel: NBFM decoder + audio
-            DecodeConfigNBFM nbfmConfig = new DecodeConfigNBFM();
-            modules.add(new NBFMDecoder(nbfmConfig));
-            modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig, false, Protocol.EDACS));
-            modules.add(new AudioModule(aliasList, 0, 60000, AUDIO_FILTER_ENABLE));
+            boolean proVoice = false;
+            if(decodeConfig instanceof DecodeConfigEDACS edacsConfig)
+            {
+                proVoice = edacsConfig.getVoiceMode() == DecodeConfigEDACS.VoiceMode.PROVOICE;
+            }
+            if(proVoice)
+            {
+                // Digital traffic channel: ProVoice frame sync + IMBE 7100
+                // audio via JMBE.
+                modules.add(new io.github.dsheirer.module.decode.edacs.EDACSProVoiceDecoder());
+                modules.add(new io.github.dsheirer.module.decode.edacs.EDACSProVoiceAudioModule(userPreferences, aliasList));
+            }
+            else
+            {
+                // Analog traffic channel: NBFM decoder + audio
+                DecodeConfigNBFM nbfmConfig = new DecodeConfigNBFM();
+                modules.add(new NBFMDecoder(nbfmConfig));
+                modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig, false, Protocol.EDACS));
+                modules.add(new AudioModule(aliasList, 0, 60000, AUDIO_FILTER_ENABLE));
+            }
         }
         else
         {
