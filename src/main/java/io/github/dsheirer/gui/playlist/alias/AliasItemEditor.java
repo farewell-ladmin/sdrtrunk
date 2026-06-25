@@ -761,6 +761,12 @@ public class AliasItemEditor extends Editor<Alias>
             mptMenu.getItems().add(new AddTalkgroupItem(Protocol.MPT1327));
             mptMenu.getItems().add(new AddTalkgroupRangeItem(Protocol.MPT1327));
 
+            Menu motoMenu = new ProtocolMenu(Protocol.MOTOROLA_TYPE_II);
+            motoMenu.getItems().add(new AddTalkgroupItem(Protocol.MOTOROLA_TYPE_II));
+            motoMenu.getItems().add(new AddTalkgroupRangeItem(Protocol.MOTOROLA_TYPE_II));
+            motoMenu.getItems().add(new AddRadioIdItem(Protocol.MOTOROLA_TYPE_II));
+            motoMenu.getItems().add(new AddRadioIdRangeItem(Protocol.MOTOROLA_TYPE_II));
+
             Menu nbfmMenu = new ProtocolMenu(Protocol.NBFM);
             nbfmMenu.getItems().add(new AddTalkgroupItem(Protocol.NBFM));
             nbfmMenu.getItems().add(new AddTalkgroupRangeItem(Protocol.NBFM));
@@ -779,7 +785,7 @@ public class AliasItemEditor extends Editor<Alias>
             lojackMenu.getItems().add(new AddLojackItem());
 
             mAddIdentifierButton.getItems().addAll(amMenu, p25Menu, dmrMenu, fleetsyncMenu, ltrMenu, mdcMenu, mptMenu,
-                nbfmMenu, passportMenu, taitMenu, new SeparatorMenuItem(), lojackMenu);
+                motoMenu, nbfmMenu, passportMenu, taitMenu, new SeparatorMenuItem(), lojackMenu);
         }
 
         return mAddIdentifierButton;

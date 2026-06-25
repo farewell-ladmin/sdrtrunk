@@ -25,6 +25,7 @@ import io.github.dsheirer.identifier.talkgroup.TalkgroupIdentifier;
 import io.github.dsheirer.identifier.talkgroup.UnknownTalkgroupIdentifier;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.dmr.channel.TimeslotFrequency;
+import io.github.dsheirer.module.decode.moto.identifier.MotorolaTypeIITalkgroup;
 import io.github.dsheirer.module.decode.mpt1327.identifier.MPT1327Talkgroup;
 import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup;
 import io.github.dsheirer.module.decode.passport.identifier.PassportTalkgroup;
@@ -150,6 +151,8 @@ public class RadioReferenceDecoder
                 return LTRTalkgroup.create(value);
             case MPT1327:
                 return MPT1327Talkgroup.createTo(value);
+            case MOTOROLA_TYPE_II:
+                return new MotorolaTypeIITalkgroup(value);
             case PASSPORT:
                 return PassportTalkgroup.create(value);
             default:
@@ -310,6 +313,15 @@ public class RadioReferenceDecoder
     }
 
     /**
+     * Indicates if the system is a Motorola Type II analog trunking system.
+     */
+    public boolean isMotorolaTypeII(System system)
+    {
+        return getType(system) != null && getType(system).getName().contentEquals("Motorola") &&
+            getProtocol(system) == Protocol.MOTOROLA_TYPE_II;
+    }
+
+    /**
      * Indicates if the site is a simulcast site.
      * @param site to inspect
      * @return true if the site employs LSM modulation
@@ -423,10 +435,17 @@ public class RadioReferenceDecoder
             case "Project 25":
                 return Protocol.APCO25;
             case "Motorola":
-                if(voice.getName().contentEquals("Analog and APCO-25 Common Air Interface") ||
-                    voice.getName().contentEquals("APCO-25 Common Air Interface Exclusive"))
+                if(voice == null || voice.getName() == null)
                 {
-                    return Protocol.APCO25;
+                    return Protocol.UNKNOWN;
+                }
+                else if(voice.getName().contentEquals("Analog and APCO-25 Common Air Interface") ||
+                    voice.getName().contentEquals("APCO-25 Common Air Interface Exclusive") ||
+                    voice.getName().contentEquals("Analog") ||
+                    voice.getName().contentEquals("Analog/FM"))
+                {
+                    // Legacy Motorola systems use a Type II control channel even when voice channels carry P25 CAI.
+                    return Protocol.MOTOROLA_TYPE_II;
                 }
                 break;
             case "NXDN":
@@ -502,9 +521,11 @@ public class RadioReferenceDecoder
                     break;
                 case "Motorola":
                     if(voice.getName().contentEquals("Analog and APCO-25 Common Air Interface") ||
-                        voice.getName().contentEquals("APCO-25 Common Air Interface Exclusive"))
+                        voice.getName().contentEquals("APCO-25 Common Air Interface Exclusive") ||
+                        voice.getName().contentEquals("Analog") ||
+                        voice.getName().contentEquals("Analog/FM"))
                     {
-                        return DecoderType.P25_PHASE1;
+                        return DecoderType.MOTOROLA_TYPE_II;
                     }
                     break;
                 case "NXDN":

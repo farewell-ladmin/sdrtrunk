@@ -58,6 +58,7 @@ public class TalkgroupFormatter
         mFormatterMap.put(Protocol.LTR, ltr);
         mFormatterMap.put(Protocol.LTR_NET, ltr);
         mFormatterMap.put(Protocol.MDC1200, new MDC1200TalkgroupFormatter());
+        mFormatterMap.put(Protocol.MOTOROLA_TYPE_II, new APCO25TalkgroupFormatter());
         mFormatterMap.put(Protocol.MPT1327, new MPT1327TalkgroupFormatter());
         mFormatterMap.put(Protocol.PASSPORT, new PassportTalkgroupFormatter());
         mFormatterMap.put(Protocol.UNKNOWN, new UnknownTalkgroupFormatter());

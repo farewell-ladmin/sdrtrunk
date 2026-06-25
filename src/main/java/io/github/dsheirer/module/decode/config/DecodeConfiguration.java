@@ -32,6 +32,7 @@ import io.github.dsheirer.module.decode.ltrstandard.DecodeConfigLTRStandard;
 import io.github.dsheirer.module.decode.mpt1327.DecodeConfigMPT1327;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
+import io.github.dsheirer.module.decode.moto.DecodeConfigMotorolaTypeII;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25;
 import io.github.dsheirer.module.decode.passport.DecodeConfigPassport;
 import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
@@ -47,7 +48,8 @@ import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
     @JsonSubTypes.Type(value = DecodeConfigP25.class, name = "decodeConfigP25"),
     @JsonSubTypes.Type(value = DecodeConfigPassport.class, name = "decodeConfigPassport"),
     @JsonSubTypes.Type(value = DecodeConfigDMR.class, name = "decodeConfigDMR"),
-    @JsonSubTypes.Type(value = DecodeConfigEDACS.class, name = "decodeConfigEDACS")
+    @JsonSubTypes.Type(value = DecodeConfigEDACS.class, name = "decodeConfigEDACS"),
+    @JsonSubTypes.Type(value = DecodeConfigMotorolaTypeII.class, name = "decodeConfigMotorolaTypeII")
 })
 @JacksonXmlRootElement(localName = "decode_configuration")
 public abstract class DecodeConfiguration extends Configuration

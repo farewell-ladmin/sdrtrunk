@@ -64,6 +64,11 @@ import io.github.dsheirer.module.decode.lj1200.LJ1200MessageFilter;
 import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoder;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoderState;
+import io.github.dsheirer.module.decode.moto.BandplanType;
+import io.github.dsheirer.module.decode.moto.DecodeConfigMotorolaTypeII;
+import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoder;
+import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoderState;
+import io.github.dsheirer.module.decode.moto.MotorolaTypeIITrafficChannelManager;
 import io.github.dsheirer.module.decode.ltrnet.DecodeConfigLTRNet;
 import io.github.dsheirer.module.decode.ltrnet.LTRNetDecoder;
 import io.github.dsheirer.module.decode.ltrnet.LTRNetDecoderState;
@@ -107,6 +112,7 @@ import io.github.dsheirer.module.decode.tait.Tait1200MessageFilter;
 import io.github.dsheirer.module.decode.traffic.TrafficChannelManager;
 import io.github.dsheirer.module.demodulate.fm.FMDemodulatorModule;
 import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.source.SourceType;
 import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
 import io.github.dsheirer.source.tuner.channel.rotation.ChannelRotationMonitor;
@@ -198,6 +204,10 @@ public class DecoderFactory
                 break;
             case EDACS:
                 processEDACS(userPreferences, channel, modules, aliasList, decodeConfig);
+                break;
+            case MOTOROLA_TYPE_II:
+                processMotorolaTypeII(channel, userPreferences, modules, aliasList,
+                    (DecodeConfigMotorolaTypeII) decodeConfig, trafficChannelManager, channelDescriptor);
                 break;
             default:
                 throw new IllegalArgumentException("Unknown decoder type [" + decodeConfig.getDecoderType().toString() + "]");
@@ -483,6 +493,32 @@ public class DecoderFactory
     }
 
     /**
+     * Creates decoder modules for Motorola Type II trunking (Smartnet/SmartZone).
+     */
+    private static void processMotorolaTypeII(Channel channel, UserPreferences userPreferences,
+                                               List<Module> modules, AliasList aliasList,
+                                               DecodeConfigMotorolaTypeII decodeConfig,
+                                               TrafficChannelManager trafficChannelManager,
+                                               IChannelDescriptor channelDescriptor)
+    {
+        if(channel.isTrafficChannel())
+        {
+            DecodeConfigNBFM nbfmConfig = new DecodeConfigNBFM();
+            modules.add(new NBFMDecoder(nbfmConfig));
+            modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig, false, Protocol.MOTOROLA_TYPE_II));
+            modules.add(new AudioModule(aliasList, 0, 60000, AUDIO_FILTER_ENABLE));
+        }
+        else
+        {
+            modules.add(new MotorolaTypeIIDecoder(decodeConfig));
+            MotorolaTypeIITrafficChannelManager tcm = new MotorolaTypeIITrafficChannelManager(channel, decodeConfig);
+            modules.add(tcm);
+            modules.add(new MotorolaTypeIIDecoderState(channel, tcm));
+            // No AudioModule on control channel - CC is data-only, audio belongs on traffic channels
+        }
+    }
+
+    /**
      * Creates modules for DMR decoder setup.
      *
      * Note: on some DMR systems (e.g. Capacity+) we convert standard channels to traffic channels (when rest channel
@@ -736,6 +772,8 @@ public class DecoderFactory
                 return new DecodeConfigP25Phase2();
             case EDACS:
                 return new DecodeConfigEDACS();
+            case MOTOROLA_TYPE_II:
+                return new DecodeConfigMotorolaTypeII();
             default:
                 throw new IllegalArgumentException("DecodeConfigFactory - unknown decoder type [" + decoder + "]");
         }
@@ -812,6 +850,19 @@ public class DecoderFactory
                     DecodeConfigEDACS copyEDACS = new DecodeConfigEDACS();
                     copyEDACS.setLcnFrequencies(originalEDACS.getLcnFrequencies());
                     return copyEDACS;
+                case MOTOROLA_TYPE_II:
+                    DecodeConfigMotorolaTypeII originalMoto = (DecodeConfigMotorolaTypeII)config;
+                    DecodeConfigMotorolaTypeII copyMoto = new DecodeConfigMotorolaTypeII();
+                    copyMoto.setBandplanType(originalMoto.getBandplanType());
+                    copyMoto.setTrafficChannelPoolSize(originalMoto.getTrafficChannelPoolSize());
+                    copyMoto.setDefaultVoiceMode(originalMoto.getDefaultVoiceMode());
+                    if(originalMoto.getBandplanType() == BandplanType.OBT)
+                    {
+                        copyMoto.setObtBaseFrequency(originalMoto.getObtBaseFrequency());
+                        copyMoto.setObtSpacing(originalMoto.getObtSpacing());
+                        copyMoto.setObtOffset(originalMoto.getObtOffset());
+                    }
+                    return copyMoto;
                 default:
                     throw new IllegalArgumentException("Unrecognized decoder configuration type:" + config.getDecoderType());
             }

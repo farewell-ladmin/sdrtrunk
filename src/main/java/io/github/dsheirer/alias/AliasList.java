@@ -48,6 +48,8 @@ import io.github.dsheirer.identifier.talkgroup.TalkgroupIdentifier;
 import io.github.dsheirer.identifier.tone.ToneIdentifier;
 import io.github.dsheirer.identifier.tone.ToneSequence;
 import io.github.dsheirer.module.decode.dcs.DCSCode;
+import io.github.dsheirer.module.decode.p25.identifier.radio.APCO25RadioIdentifier;
+import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup;
 import io.github.dsheirer.protocol.Protocol;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -414,7 +416,17 @@ public class AliasList
 
                     if(talkgroupAliasList != null)
                     {
-                        return toList(talkgroupAliasList.getAlias(talkgroup));
+                        Alias alias = talkgroupAliasList.getAlias(talkgroup);
+
+                        if(alias != null)
+                        {
+                            return toList(alias);
+                        }
+                    }
+
+                    if(identifier.getProtocol() == Protocol.MOTOROLA_TYPE_II)
+                    {
+                        return getLegacyMotorolaTypeIIApco25TalkgroupAlias(talkgroup);
                     }
                     break;
                 case PATCH_GROUP:
@@ -471,7 +483,17 @@ public class AliasList
 
                     if(radioAliasList != null)
                     {
-                        return toList(radioAliasList.getAlias(radio));
+                        Alias alias = radioAliasList.getAlias(radio);
+
+                        if(alias != null)
+                        {
+                            return toList(alias);
+                        }
+                    }
+
+                    if(identifier.getProtocol() == Protocol.MOTOROLA_TYPE_II)
+                    {
+                        return getLegacyMotorolaTypeIIApco25RadioAlias(radio);
                     }
                     break;
                 case ESN:
@@ -521,6 +543,30 @@ public class AliasList
                     }
                     break;
             }
+        }
+
+        return Collections.emptyList();
+    }
+
+    private List<Alias> getLegacyMotorolaTypeIIApco25TalkgroupAlias(TalkgroupIdentifier talkgroup)
+    {
+        TalkgroupAliasList apco25TalkgroupAliasList = mTalkgroupProtocolMap.get(Protocol.APCO25);
+
+        if(apco25TalkgroupAliasList != null)
+        {
+            return toList(apco25TalkgroupAliasList.getAlias(APCO25Talkgroup.create(talkgroup.getValue())));
+        }
+
+        return Collections.emptyList();
+    }
+
+    private List<Alias> getLegacyMotorolaTypeIIApco25RadioAlias(RadioIdentifier radio)
+    {
+        RadioAliasList apco25RadioAliasList = mRadioProtocolMap.get(Protocol.APCO25);
+
+        if(apco25RadioAliasList != null)
+        {
+            return toList(apco25RadioAliasList.getAlias(APCO25RadioIdentifier.createAny(radio.getValue())));
         }
 
         return Collections.emptyList();
