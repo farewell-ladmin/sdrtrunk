@@ -9,8 +9,9 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Frame processor for EDACS control channel. Accepts a stream of demodulated
- * bits (0 or 1), detects the 48-bit EDACS sync word, assembles 6x 40-bit
- * message words per frame, applies 3-copy majority voting plus BCH(40,28)
+ * bits (0 or 1), detects frame boundaries via dotting (the 24-bit alternating
+ * preamble at the start of every EDACS control channel frame), assembles
+ * 6x 40-bit message words, applies 3-copy majority voting plus BCH(40,28)
  * error correction, and produces EDACSMessage instances via
  * {@link EDACSMessageFactory}.
  *
@@ -32,6 +33,15 @@ import org.slf4j.LoggerFactory;
  *   <li>Each 40-bit word is a shortened BCH(40,28) codeword: 28 data
  *       bits + 12 BCH parity bits, capable of correcting up to 2 errors</li>
  * </ul>
+ *
+ * <p><b>Sync detection is dotting-based</b> (any 14+ consecutive
+ * alternations trigger a frame decode). The 48-bit exact sync match
+ * was tested but proved too strict for the sdrtrunk FM pipeline (it
+ * fired zero times on the live WAV test). The original dotting detector
+ * produces some false positives (the BCH pass rate is the gating
+ * filter), but reliably decodes the control channel in the live UI.
+ * An exact sync match is kept as a future enhancement (see
+ * {@link #isSyncMatch}) but is not used by the live bit path.</p>
  */
 public class EDACSFrameProcessor
 {
@@ -40,7 +50,8 @@ public class EDACSFrameProcessor
     private static final int SYNC_BITS = 48;
     private static final int WORD_BITS = 40;
     private static final int DATA_BITS = 6 * WORD_BITS;
-    private static final long SYNC_MASK = 0xFFFFFFFFFFFFL;
+    private static final int FRAME_BITS = SYNC_BITS + DATA_BITS;
+    private static final int DOTTING_THRESHOLD = 14;
 
     /** 48-bit EDACS sync word (positive polarity), MSB-first. */
     private static final long EDACS_SYNC = 0x555557125555L;
@@ -48,23 +59,11 @@ public class EDACSFrameProcessor
     /** 48-bit EDACS sync word (negative / inverted polarity), MSB-first. */
     private static final long EDACS_SYNC_INV = 0xAAAAEA8AAAAAL;
 
-    /**
-     * Maximum number of bit errors allowed in the 48-bit sync match. At
-     * 5% BER, (0.95)^48 = 8.5% of real frames would have a perfect sync;
-     * allowing 1 error raises this to 21% and 2 errors to 27% — a
-     * 3x improvement in detection rate with negligible false positives
-     * (chance of a 2-bit-error false match in a random stream is ~1e-12).
-     */
-    private static final int SYNC_ERROR_TOLERANCE = 2;
-
-    private final boolean[] mBitBuffer = new boolean[SYNC_BITS + DATA_BITS + 80];
+    private final boolean[] mBitBuffer = new boolean[FRAME_BITS + 80];
     private int mWritePtr = 0;
-
-    /** Sliding 48-bit window of the most recent bits, MSB = oldest. */
-    private long mSyncRegister = 0;
-
+    private int mConsecutiveAlts = 0;
+    private boolean mLastBit;
     private int mFramePending = 0;
-    private int mDataStart = -1;
 
     private final EDACSVoter mVoter = new EDACSVoter();
 
@@ -72,21 +71,30 @@ public class EDACSFrameProcessor
     private int mFramesDecoded = 0;
     private int mBchPasses = 0;
     private int mBchFails = 0;
-    private int mSyncMatches = 0;
+    private int mDottingMatches = 0;
     private long mLastStatsTime = 0;
 
     /**
      * Feeds a single demodulated bit to the frame processor. Bit value 1
      * represents a positive FM deviation and 0 a negative. Idle / no-carrier
-     * periods should be skipped by the caller (see BIN test for the
-     * "byte == 0 means idle" convention from DSD-FME's symbol capture).
+     * periods should be skipped by the caller.
      */
     public void processBit(int bit, Listener<IMessage> messageListener)
     {
-        mBitBuffer[mWritePtr] = (bit != 0);
+        boolean currentBit = (bit != 0);
+
+        mBitBuffer[mWritePtr] = currentBit;
         mWritePtr = (mWritePtr + 1) % mBitBuffer.length;
 
-        mSyncRegister = ((mSyncRegister << 1) | (bit & 1L)) & SYNC_MASK;
+        if(currentBit != mLastBit)
+        {
+            mConsecutiveAlts++;
+        }
+        else
+        {
+            mConsecutiveAlts = 0;
+        }
+        mLastBit = currentBit;
 
         if(mFramePending > 0)
         {
@@ -97,16 +105,15 @@ public class EDACSFrameProcessor
             }
         }
 
-        if(mFramePending <= 0 && isSyncMatch(mSyncRegister))
+        if(mConsecutiveAlts >= DOTTING_THRESHOLD && mFramePending <= 0)
         {
-            mSyncMatches++;
-            mDataStart = mWritePtr;
-            mFramePending = DATA_BITS;
+            mDottingMatches++;
+            mFramePending = FRAME_BITS - DOTTING_THRESHOLD;
         }
 
         if(System.currentTimeMillis() - mLastStatsTime > 10000)
         {
-            mLog.info("EDACS FrameProcessor - sync_matches: " + mSyncMatches +
+            mLog.info("EDACS FrameProcessor - dotting_matches: " + mDottingMatches +
                     " detected: " + mFramesDetected +
                     " decoded: " + mFramesDecoded +
                     " BCH pass: " + mBchPasses + " fail: " + mBchFails);
@@ -115,23 +122,24 @@ public class EDACSFrameProcessor
     }
 
     /**
-     * Tests whether the 48-bit sliding register matches the EDACS sync
-     * word in either polarity, with up to {@link #SYNC_ERROR_TOLERANCE}
-     * bit errors.
+     * Tests whether the 48-bit register matches the EDACS sync word in
+     * either polarity. Currently unused by the live bit path; retained
+     * for future exact-sync enhancement.
      */
+    @SuppressWarnings("unused")
     private boolean isSyncMatch(long register)
     {
         long xorPos = register ^ EDACS_SYNC;
         long xorNeg = register ^ EDACS_SYNC_INV;
-        return Long.bitCount(xorPos) <= SYNC_ERROR_TOLERANCE ||
-                Long.bitCount(xorNeg) <= SYNC_ERROR_TOLERANCE;
+        return Long.bitCount(xorPos) <= 2 || Long.bitCount(xorNeg) <= 2;
     }
 
     private void decodeFrame(Listener<IMessage> messageListener)
     {
         mFramesDetected++;
-        int dataStart = mDataStart;
-        mDataStart = -1;
+
+        int readPtr = (mWritePtr + mBitBuffer.length - FRAME_BITS) % mBitBuffer.length;
+        int dataStart = (readPtr + SYNC_BITS) % mBitBuffer.length;
 
         CorrectedBinaryMessage[] words = new CorrectedBinaryMessage[6];
         for(int w = 0; w < 6; w++)
@@ -201,8 +209,8 @@ public class EDACSFrameProcessor
         return mBchFails;
     }
 
-    public int getSyncMatches()
+    public int getDottingMatches()
     {
-        return mSyncMatches;
+        return mDottingMatches;
     }
 }
