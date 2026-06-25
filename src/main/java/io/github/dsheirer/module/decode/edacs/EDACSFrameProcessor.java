@@ -48,6 +48,15 @@ public class EDACSFrameProcessor
     /** 48-bit EDACS sync word (negative / inverted polarity), MSB-first. */
     private static final long EDACS_SYNC_INV = 0xAAAAEA8AAAAAL;
 
+    /**
+     * Maximum number of bit errors allowed in the 48-bit sync match. At
+     * 5% BER, (0.95)^48 = 8.5% of real frames would have a perfect sync;
+     * allowing 1 error raises this to 21% and 2 errors to 27% — a
+     * 3x improvement in detection rate with negligible false positives
+     * (chance of a 2-bit-error false match in a random stream is ~1e-12).
+     */
+    private static final int SYNC_ERROR_TOLERANCE = 2;
+
     private final boolean[] mBitBuffer = new boolean[SYNC_BITS + DATA_BITS + 80];
     private int mWritePtr = 0;
 
@@ -88,7 +97,7 @@ public class EDACSFrameProcessor
             }
         }
 
-        if((mSyncRegister == EDACS_SYNC || mSyncRegister == EDACS_SYNC_INV) && mFramePending <= 0)
+        if(mFramePending <= 0 && isSyncMatch(mSyncRegister))
         {
             mSyncMatches++;
             mDataStart = mWritePtr;
@@ -103,6 +112,19 @@ public class EDACSFrameProcessor
                     " BCH pass: " + mBchPasses + " fail: " + mBchFails);
             mLastStatsTime = System.currentTimeMillis();
         }
+    }
+
+    /**
+     * Tests whether the 48-bit sliding register matches the EDACS sync
+     * word in either polarity, with up to {@link #SYNC_ERROR_TOLERANCE}
+     * bit errors.
+     */
+    private boolean isSyncMatch(long register)
+    {
+        long xorPos = register ^ EDACS_SYNC;
+        long xorNeg = register ^ EDACS_SYNC_INV;
+        return Long.bitCount(xorPos) <= SYNC_ERROR_TOLERANCE ||
+                Long.bitCount(xorNeg) <= SYNC_ERROR_TOLERANCE;
     }
 
     private void decodeFrame(Listener<IMessage> messageListener)

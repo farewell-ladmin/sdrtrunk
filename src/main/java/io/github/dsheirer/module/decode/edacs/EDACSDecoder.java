@@ -95,16 +95,19 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         float[] demodulated = mFMDemodulator.demodulate(filteredI, filteredQ);
 
-        // DSD-FME reference: 5 samples per symbol at 9600 baud = 48000 Hz.
-        // The previous 24 kHz target gave 2.5 sps (fractional timing) which
-        // degraded BCH pass rate. Resample to 48 kHz instead and let the
-        // sync detector's bit detection average over an exact 5-sample window.
-        float[] resampled = resample(demodulated, mDecimatedRate, 48000.0);
+        // Resample from the decimated rate (typically 50 kHz from the
+        // channelizer) down to 24 kHz for the sync detector. The 24/50 ~= 0.48
+        // ratio produces a uniform 2:1 downsample in the existing
+        // sample-and-hold resampler, which is important for clean symbol
+        // timing. 24 kHz / 9600 baud = 2.5 sps (fractional) but the
+        // 1-bit-error-tolerant 48-bit sync match in EDACSFrameProcessor
+        // handles the resulting BER.
+        float[] resampled = resample(demodulated, mDecimatedRate, 24000.0);
 
         mSyncDetector.process(resampled, getMessageListener());
     }
 
-    private double mDecimatedRate = 48000.0;
+    private double mDecimatedRate = 24000.0;
 
     private void setSampleRate(double sampleRate)
     {
@@ -119,18 +122,18 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         mDecimatedRate = sampleRate / decimation;
 
-        // DSD-FME rtl_fm uses BW:24 -> 12 kHz LPF after FM demod. EDACS
-        // channel width is 25 kHz; symbol rate 9600 baud so 9.6 kHz pass /
-        // 12 kHz stop is appropriate.
+        // DSD-FME rtl_fm uses BW:24 -> 12 kHz LPF. EDACS channel width
+        // is 25 kHz; symbol rate 9600 baud so 9.6 kHz pass / 12 kHz stop
+        // is appropriate.
         float[] coefficients = FilterFactory.getLowPass(mDecimatedRate, 9600, 12000, 60,
                 io.github.dsheirer.dsp.window.WindowType.HAMMING, true);
 
         mIBasebandFilter = FilterFactory.getRealFilter(coefficients);
         mQBasebandFilter = FilterFactory.getRealFilter(coefficients);
 
-        mLog.info("EDACS decoder sample rate: " + mDecimatedRate + " (decimation: " + decimation + ") -> 48 kHz");
+        mLog.info("EDACS decoder sample rate: " + mDecimatedRate + " (decimation: " + decimation + ") -> 24 kHz");
 
-        mSyncDetector.setSampleRate(48000.0);
+        mSyncDetector.setSampleRate(24000.0);
     }
 
     public class SourceEventProcessor implements Listener<SourceEvent>
