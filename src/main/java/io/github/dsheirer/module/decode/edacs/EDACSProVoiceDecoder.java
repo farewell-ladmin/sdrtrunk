@@ -46,8 +46,8 @@ import org.slf4j.LoggerFactory;
  * </ul>
  *
  * <p>Total per frame: 24 + 32 + 144 + 2 + 142 + 16 + 2 + 142 + 2 + 142 + 2 + 142 = 792
- * bits. At 9600 baud that's 82.5 ms; at 5 samples/symbol with a 48 kHz
- * sample rate that's 3960 samples per ProVoice frame.</p>
+ * bits over the air. The decoder frames from sync, so the internal frame omits
+ * the 24 dotting bits and is 772 bits.</p>
  */
 public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListener, Listener<ComplexSamples>,
         ISourceEventListener, IMessageProvider
@@ -60,6 +60,8 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
     private static final int SPACER_BITS = 2;
     private static final int BF_BITS = 16;
     private static final int BITS_PER_IMBE = IMBE_BITS_PER_FRAME;
+    private static final int IMBE_PAIR_BITS = (SPACER_BITS + IMBE_BITS_PER_FRAME) * 2;
+    private static final int BF_OFFSET = SYNC_BITS + HEADER_BITS + IMBE_PAIR_BITS;
     private static final int FRAME_BITS = SYNC_BITS + HEADER_BITS +
             (SPACER_BITS + IMBE_BITS_PER_FRAME) * 4 + BF_BITS + SPACER_BITS * 2;
 
@@ -227,13 +229,16 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
             return;
         }
 
-        if(!hasValidSync())
+        String syncPattern = getSyncPattern();
+        if(syncPattern == null)
         {
             mSyncRejects++;
             return;
         }
 
         int lid = readLid();
+        int bfMarker = readInt(BF_OFFSET, BF_BITS);
+        boolean[] frameBits = readFrameBits();
         int[] offset = new int[] { SYNC_BITS + HEADER_BITS };
         int[][] grid1 = new int[7][24];
         int[][] grid2 = new int[7][24];
@@ -248,7 +253,9 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
         byte[] imbe3 = EDACSProVoiceInterleave.toImbeFrame(grid3);
         byte[] imbe4 = EDACSProVoiceInterleave.toImbeFrame(grid4);
 
-        EDACSProVoiceMessage message = new EDACSProVoiceMessage(imbe1, imbe2, imbe3, imbe4, lid, System.currentTimeMillis());
+        EDACSProVoiceMessage message = new EDACSProVoiceMessage(imbe1, imbe2, imbe3, imbe4,
+                new int[][][] { grid1, grid2, grid3, grid4 }, frameBits, lid, bfMarker, syncPattern,
+                System.currentTimeMillis());
         mFramesDecoded++;
         if(messageListener != null)
         {
@@ -319,24 +326,28 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
         return mFrameBits[(startIndex + bitOffset) % mFrameBits.length];
     }
 
-    /**
-     * Read {@code count} bits starting {@code bitOffset} bits before the
-     * most recent dotting trigger. Returns null if there aren't enough
-     * bits yet in the ring buffer.
-     */
-    private boolean[] readImbeBits(int bitOffset, int count)
+    private boolean[] readFrameBits()
     {
-        if(mFrameBitCount < FRAME_BITS)
-        {
-            return null;
-        }
-        boolean[] result = new boolean[count];
-        int startIndex = (mFrameBitCount - FRAME_BITS + bitOffset) % mFrameBits.length;
-        for(int i = 0; i < count; i++)
+        boolean[] result = new boolean[FRAME_BITS];
+        int startIndex = (mFrameBitCount - FRAME_BITS) % mFrameBits.length;
+        for(int i = 0; i < FRAME_BITS; i++)
         {
             result[i] = mFrameBits[(startIndex + i) % mFrameBits.length];
         }
         return result;
+    }
+
+    private int readInt(int bitOffset, int bitCount)
+    {
+        int value = 0;
+        for(int i = 0; i < bitCount; i++)
+        {
+            if(readFrameBit(bitOffset + i))
+            {
+                value |= (1 << (bitCount - 1 - i));
+            }
+        }
+        return value;
     }
 
     private int readLid()
@@ -358,17 +369,23 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
         return lid;
     }
 
-    private boolean hasValidSync()
+    private String getSyncPattern()
     {
-        for(String pattern : PROVOICE_SYNC_PATTERNS)
+        for(int x = 0; x < PROVOICE_SYNC_PATTERNS.length; x++)
         {
-            if(matchesSync(pattern, false) || matchesSync(pattern, true))
+            String pattern = PROVOICE_SYNC_PATTERNS[x];
+            if(matchesSync(pattern, false))
             {
-                return true;
+                return "SYNC" + x;
+            }
+
+            if(matchesSync(pattern, true))
+            {
+                return "SYNC" + x + "_INVERTED";
             }
         }
 
-        return false;
+        return null;
     }
 
     private boolean matchesSync(String pattern, boolean invert)

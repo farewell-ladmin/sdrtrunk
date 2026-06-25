@@ -14,17 +14,26 @@ import java.util.List;
 public class EDACSProVoiceMessage implements IMessage
 {
     private final byte[][] mImbeFrames = new byte[4][];
+    private final int[][][] mImbeGrids;
+    private final boolean[] mFrameBits;
     private final int mLid;
+    private final int mBfMarker;
+    private final String mSyncPattern;
     private final long mTimestamp;
 
     public EDACSProVoiceMessage(byte[] imbeFrame1, byte[] imbeFrame2, byte[] imbeFrame3, byte[] imbeFrame4,
-                               int lid, long timestamp)
+                                int[][][] imbeGrids, boolean[] frameBits, int lid, int bfMarker,
+                                String syncPattern, long timestamp)
     {
         mImbeFrames[0] = imbeFrame1;
         mImbeFrames[1] = imbeFrame2;
         mImbeFrames[2] = imbeFrame3;
         mImbeFrames[3] = imbeFrame4;
+        mImbeGrids = imbeGrids;
+        mFrameBits = frameBits;
         mLid = lid;
+        mBfMarker = bfMarker;
+        mSyncPattern = syncPattern;
         mTimestamp = timestamp;
     }
 
@@ -36,6 +45,29 @@ public class EDACSProVoiceMessage implements IMessage
     public int getLid()
     {
         return mLid;
+    }
+
+    /**
+     * Four IMBE 7100 7x24 grids before packing into JMBE's 18-byte IMBE input format.
+     */
+    public int[][][] getImbeGrids()
+    {
+        return mImbeGrids;
+    }
+
+    public boolean[] getFrameBits()
+    {
+        return mFrameBits;
+    }
+
+    public int getBfMarker()
+    {
+        return mBfMarker;
+    }
+
+    public String getSyncPattern()
+    {
+        return mSyncPattern;
     }
 
     @Override

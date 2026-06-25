@@ -12,6 +12,7 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -34,6 +35,7 @@ public class EDACSProVoiceTrafficBasebandTest
     private static final int MAX_FILES = 25;
     private static final int MIN_BYTES = 500_000;
     private static final int CHUNK_COMPLEX_SAMPLES = 4096;
+    private static final Path DEBUG_DUMP = Path.of("C:\\Users\\ethan\\AppData\\Local\\Temp\\opencode\\edacs-provoice-debug.txt");
 
     @Test
     void testRecentTrafficBasebandRecordings() throws Exception
@@ -43,6 +45,7 @@ public class EDACSProVoiceTrafficBasebandTest
 
         int filesWithMessages = 0;
         int totalMessages = 0;
+        StringBuilder debug = new StringBuilder();
 
         System.out.println();
         System.out.println("=== EDACS ProVoice Traffic Baseband Test ===");
@@ -62,7 +65,14 @@ public class EDACSProVoiceTrafficBasebandTest
             {
                 filesWithMessages++;
                 printFirstMessage(result.messages.get(0));
+                appendDebug(debug, file, result.messages.get(0));
             }
+        }
+
+        if(!debug.isEmpty())
+        {
+            Files.writeString(DEBUG_DUMP, debug.toString(), StandardCharsets.US_ASCII);
+            System.out.println("Debug dump: " + DEBUG_DUMP);
         }
 
         System.out.println("\nFiles with ProVoice messages: " + filesWithMessages + " / " + files.size());
@@ -108,13 +118,50 @@ public class EDACSProVoiceTrafficBasebandTest
 
     private void printFirstMessage(EDACSProVoiceMessage message)
     {
-        System.out.println("  First message LID: " + String.format("0x%04X", message.getLid()) +
-                " valid=" + message.isValid());
+        System.out.println("  First message sync=" + message.getSyncPattern() +
+                " LID=" + String.format("0x%04X", message.getLid()) +
+                " BF=" + String.format("0x%04X", message.getBfMarker()) +
+                " (" + message.getBfMarker() + ") valid=" + message.isValid());
         byte[][] frames = message.getImbeFrames();
         for(int x = 0; x < frames.length; x++)
         {
             System.out.println("  IMBE" + (x + 1) + ": " + toHex(frames[x]));
         }
+    }
+
+    private void appendDebug(StringBuilder sb, File file, EDACSProVoiceMessage message)
+    {
+        sb.append("FILE ").append(file.getName()).append('\n');
+        sb.append("SYNC ").append(message.getSyncPattern()).append('\n');
+        sb.append(String.format(Locale.US, "LID 0x%04X\n", message.getLid()));
+        sb.append(String.format(Locale.US, "BF 0x%04X %d\n", message.getBfMarker(), message.getBfMarker()));
+
+        byte[][] frames = message.getImbeFrames();
+        for(int x = 0; x < frames.length; x++)
+        {
+            sb.append("IMBE").append(x + 1).append(' ').append(toHex(frames[x])).append('\n');
+        }
+
+        int[][][] grids = message.getImbeGrids();
+        for(int frame = 0; frame < grids.length; frame++)
+        {
+            sb.append("GRID").append(frame + 1).append('\n');
+            for(int row = 0; row < grids[frame].length; row++)
+            {
+                for(int column = 0; column < grids[frame][row].length; column++)
+                {
+                    sb.append(grids[frame][row][column]);
+                }
+                sb.append('\n');
+            }
+        }
+
+        sb.append("BITS ");
+        for(boolean bit : message.getFrameBits())
+        {
+            sb.append(bit ? '1' : '0');
+        }
+        sb.append("\n\n");
     }
 
     private String toHex(byte[] bytes)
