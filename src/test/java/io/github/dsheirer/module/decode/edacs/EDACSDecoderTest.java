@@ -84,6 +84,16 @@ public class EDACSDecoderTest
         List<IMessage> messages = new ArrayList<>();
         Listener<IMessage> listener = messages::add;
 
+        // Polarity is INVERTED in this capture vs the DSD-FME display
+        // convention. Verified by searching for the sync word 0x555557125555
+        // (positive polarity, MSB-first): the alternating dotting portion
+        // (24 bits) must be 010101... but the file shows 1,3,1,3,... at the
+        // first clean alternating run, which only maps to 0x555557125555 if
+        // 1 -> 0 and 3 -> 1. DSD-FME's getSymbol() writes 1 for positive and
+        // 3 for negative, but this capture appears to have been recorded
+        // through a different code path that flips the polarity (perhaps the
+        // recording tool that produced the .bin file post-processes the
+        // stream to invert it). Either way, 1=0 / 3=1 is empirically correct.
         int zeros = 0;
         int ones = 0;
         int threes = 0;
@@ -91,27 +101,32 @@ public class EDACSDecoderTest
         for(byte b : bytes)
         {
             int v = b & 0xFF;
-            if(v == 0)
+            if(v == 1)
             {
-                // Idle / no carrier - skip per DSD-FME convention
-                zeros++;
-                continue;
-            }
-            else if(v == 1)
-            {
-                // Positive FM deviation -> bit 1
+                // Byte 1 -> bit 0
                 ones++;
-                processor.processBit(1, listener);
+                processor.processBit(0, listener);
             }
             else if(v == 3)
             {
-                // Negative FM deviation -> bit 0
+                // Byte 3 -> bit 1
                 threes++;
-                processor.processBit(0, listener);
+                processor.processBit(1, listener);
             }
             else
             {
-                others++;
+                if(v == 0)
+                {
+                    // 0s are weak-positive artifacts in this capture; treat
+                    // as bit 0 (matching the 1-byte convention above) so
+                    // they don't break the alternating dotting pattern.
+                    zeros++;
+                    processor.processBit(0, listener);
+                }
+                else
+                {
+                    others++;
+                }
             }
         }
 

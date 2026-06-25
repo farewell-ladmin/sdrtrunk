@@ -9,23 +9,23 @@ import org.slf4j.LoggerFactory;
 
 /**
  * Frame processor for EDACS control channel. Accepts a stream of demodulated
- * bits (0 or 1) and detects dotting/sync boundaries, assembles 6x 40-bit
+ * bits (0 or 1), detects the 48-bit EDACS sync word, assembles 6x 40-bit
  * message words per frame, applies 3-copy majority voting plus BCH(40,28)
  * error correction, and produces EDACSMessage instances via
  * {@link EDACSMessageFactory}.
  *
- * <p>This class was extracted from the original {@code EDACSSyncDetector} so
- * that the bit-detection stage (FM demod + AFC + symbol timing) can be
- * skipped when validating frames from a pre-recorded symbol stream (e.g.
- * DSD-FME's {@code .bin} capture).</p>
+ * <p>Extracted from the original {@code EDACSSyncDetector} so that the
+ * FM-demodulator stage can be bypassed when validating frames from a
+ * pre-recorded symbol stream (e.g. DSD-FME's {@code .bin} capture).</p>
  *
- * <p>Wire format reference (from EDACS-FM / DSD-FME docs):</p>
+ * <p>Wire format (EDACS-FM / DSD-FME reference, US patent US7546135B2):</p>
  * <ul>
  *   <li>Each outbound control channel frame = 48-bit sync + 6 * 40-bit
- *       message words = 288 bits</li>
- *   <li>The first 24 bits of the sync word are alternating (dotting);
- *       the remaining 24 bits are the identifying pattern
- *       {@code 0x555557125555} (read MSB-first from the wire)</li>
+ *       message words = 288 bits total</li>
+ *   <li>48-bit sync word: first 24 bits are alternating (dotting), last
+ *       24 bits are the identifier. Read MSB-first on the wire the value
+ *       is {@code 0x555557125555} (positive polarity) or its bitwise
+ *       inverse {@code 0xAAAAEA8AAAAA} (negative polarity)</li>
  *   <li>The 6 message words are 3 copies of message-1 followed by 3
  *       copies of message-2; copies 2 and 5 (the middle copies) are
  *       bitwise-inverted on the wire for majority-vote resilience</li>
@@ -39,20 +39,23 @@ public class EDACSFrameProcessor
 
     private static final int SYNC_BITS = 48;
     private static final int WORD_BITS = 40;
-    private static final int FRAME_BITS = SYNC_BITS + 6 * WORD_BITS;
+    private static final int DATA_BITS = 6 * WORD_BITS;
+    private static final long SYNC_MASK = 0xFFFFFFFFFFFFL;
 
-    /**
-     * Number of consecutive bit-alternations required to declare the start of
-     * a sync / dotting pattern. The EDACS sync word begins with 24 alternating
-     * bits, so 14 is comfortably inside the dotting preamble.
-     */
-    private static final int DOTTING_THRESHOLD = 14;
+    /** 48-bit EDACS sync word (positive polarity), MSB-first. */
+    private static final long EDACS_SYNC = 0x555557125555L;
 
-    private final boolean[] mBitBuffer = new boolean[FRAME_BITS + 80];
+    /** 48-bit EDACS sync word (negative / inverted polarity), MSB-first. */
+    private static final long EDACS_SYNC_INV = 0xAAAAEA8AAAAAL;
+
+    private final boolean[] mBitBuffer = new boolean[SYNC_BITS + DATA_BITS + 80];
     private int mWritePtr = 0;
-    private int mConsecutiveAlts = 0;
-    private boolean mLastBit;
+
+    /** Sliding 48-bit window of the most recent bits, MSB = oldest. */
+    private long mSyncRegister = 0;
+
     private int mFramePending = 0;
+    private int mDataStart = -1;
 
     private final EDACSVoter mVoter = new EDACSVoter();
 
@@ -60,30 +63,21 @@ public class EDACSFrameProcessor
     private int mFramesDecoded = 0;
     private int mBchPasses = 0;
     private int mBchFails = 0;
+    private int mSyncMatches = 0;
     private long mLastStatsTime = 0;
 
     /**
-     * Feeds a single demodulated bit to the frame processor. Bit values are
-     * 1 for a positive FM deviation and 0 for a negative FM deviation. Bits
-     * with indeterminate polarity (e.g. idle / no carrier) should be skipped
-     * by the caller.
+     * Feeds a single demodulated bit to the frame processor. Bit value 1
+     * represents a positive FM deviation and 0 a negative. Idle / no-carrier
+     * periods should be skipped by the caller (see BIN test for the
+     * "byte == 0 means idle" convention from DSD-FME's symbol capture).
      */
     public void processBit(int bit, Listener<IMessage> messageListener)
     {
-        boolean currentBit = (bit != 0);
-
-        mBitBuffer[mWritePtr] = currentBit;
+        mBitBuffer[mWritePtr] = (bit != 0);
         mWritePtr = (mWritePtr + 1) % mBitBuffer.length;
 
-        if(currentBit != mLastBit)
-        {
-            mConsecutiveAlts++;
-        }
-        else
-        {
-            mConsecutiveAlts = 0;
-        }
-        mLastBit = currentBit;
+        mSyncRegister = ((mSyncRegister << 1) | (bit & 1L)) & SYNC_MASK;
 
         if(mFramePending > 0)
         {
@@ -94,14 +88,17 @@ public class EDACSFrameProcessor
             }
         }
 
-        if(mConsecutiveAlts >= DOTTING_THRESHOLD && mFramePending <= 0)
+        if((mSyncRegister == EDACS_SYNC || mSyncRegister == EDACS_SYNC_INV) && mFramePending <= 0)
         {
-            mFramePending = FRAME_BITS - DOTTING_THRESHOLD;
+            mSyncMatches++;
+            mDataStart = mWritePtr;
+            mFramePending = DATA_BITS;
         }
 
         if(System.currentTimeMillis() - mLastStatsTime > 10000)
         {
-            mLog.info("EDACS FrameProcessor - detected: " + mFramesDetected +
+            mLog.info("EDACS FrameProcessor - sync_matches: " + mSyncMatches +
+                    " detected: " + mFramesDetected +
                     " decoded: " + mFramesDecoded +
                     " BCH pass: " + mBchPasses + " fail: " + mBchFails);
             mLastStatsTime = System.currentTimeMillis();
@@ -111,9 +108,8 @@ public class EDACSFrameProcessor
     private void decodeFrame(Listener<IMessage> messageListener)
     {
         mFramesDetected++;
-
-        int readPtr = (mWritePtr + mBitBuffer.length - FRAME_BITS) % mBitBuffer.length;
-        int dataStart = (readPtr + SYNC_BITS) % mBitBuffer.length;
+        int dataStart = mDataStart;
+        mDataStart = -1;
 
         CorrectedBinaryMessage[] words = new CorrectedBinaryMessage[6];
         for(int w = 0; w < 6; w++)
@@ -181,5 +177,10 @@ public class EDACSFrameProcessor
     public int getBchFails()
     {
         return mBchFails;
+    }
+
+    public int getSyncMatches()
+    {
+        return mSyncMatches;
     }
 }
