@@ -42,6 +42,42 @@ public class EDACSProVoiceMessage implements IMessage
         return mImbeFrames;
     }
 
+    /**
+     * ProVoice IMBE7100 grids packed row-major, MSB first, for the JMBE PROVOICE codec.
+     */
+    public byte[][] getPackedImbe7100Frames()
+    {
+        byte[][] frames = new byte[4][];
+
+        for(int x = 0; x < frames.length; x++)
+        {
+            frames[x] = packGrid(mImbeGrids[x]);
+        }
+
+        return frames;
+    }
+
+    private byte[] packGrid(int[][] grid)
+    {
+        byte[] bytes = new byte[21];
+        int bit = 0;
+
+        for(int row = 0; row < grid.length; row++)
+        {
+            for(int column = 0; column < grid[row].length; column++)
+            {
+                if(grid[row][column] != 0)
+                {
+                    bytes[bit / 8] |= (byte)(0x80 >> (bit % 8));
+                }
+
+                bit++;
+            }
+        }
+
+        return bytes;
+    }
+
     public int getLid()
     {
         return mLid;

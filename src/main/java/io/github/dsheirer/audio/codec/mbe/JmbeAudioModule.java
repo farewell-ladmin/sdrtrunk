@@ -183,7 +183,18 @@ public abstract class JmbeAudioModule extends AbstractAudioModule implements Lis
                     if((library.getMajorVersion() == 1 && library.getMinorVersion() >= 0 &&
                             library.getBuildVersion() >= 0) || library.getMajorVersion() >= 1)
                     {
-                        audioConverter = library.getAudioConverter(getCodecName());
+                        try
+                        {
+                            audioConverter = library.getAudioConverter(getCodecName());
+                        }
+                        catch(IllegalArgumentException iae)
+                        {
+                            if(!mLibraryLoadStatusLogged.contains(JMBE_AUDIO_LIBRARY + getCodecName()))
+                            {
+                                mLog.warn("JMBE audio conversion library does not support [{}] codec", getCodecName());
+                                mLibraryLoadStatusLogged.add(JMBE_AUDIO_LIBRARY + getCodecName());
+                            }
+                        }
 
                         if(!mLibraryLoadStatusLogged.contains(JMBE_AUDIO_LIBRARY))
                         {

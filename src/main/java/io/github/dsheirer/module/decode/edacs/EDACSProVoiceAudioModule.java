@@ -2,7 +2,7 @@
 package io.github.dsheirer.module.decode.edacs;
 
 import io.github.dsheirer.alias.AliasList;
-import io.github.dsheirer.audio.codec.mbe.ImbeAudioModule;
+import io.github.dsheirer.audio.codec.mbe.JmbeAudioModule;
 import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.dsp.gain.NonClippingGain;
@@ -17,13 +17,13 @@ import org.slf4j.LoggerFactory;
  * Audio module for EDACS ProVoice traffic channels. Receives
  * {@link EDACSProVoiceMessage} instances from the
  * {@link EDACSProVoiceDecoder}, decodes each of the 4 IMBE 7100
- * voice frames via the JMBE {@code IMBEAudioCodec} (shared with the
- * P25P1 audio path), and emits 80 ms of 8 kHz PCM audio per
- * ProVoice frame.
+ * voice frames via the JMBE {@code PROVOICE} codec, and emits 80 ms
+ * of 8 kHz PCM audio per ProVoice frame.
  */
-public class EDACSProVoiceAudioModule extends ImbeAudioModule
+public class EDACSProVoiceAudioModule extends JmbeAudioModule
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSProVoiceAudioModule.class);
+    private static final String PROVOICE_CODEC = "PROVOICE";
 
     private final NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
     private final SquelchStateListener mSquelchStateListener = new SquelchStateListener();
@@ -33,13 +33,13 @@ public class EDACSProVoiceAudioModule extends ImbeAudioModule
 
     public EDACSProVoiceAudioModule(UserPreferences userPreferences, AliasList aliasList)
     {
-        super(userPreferences, aliasList);
+        super(userPreferences, aliasList, DEFAULT_TIMESLOT);
     }
 
     @Override
-    protected int getTimeslot()
+    protected String getCodecName()
     {
-        return 0;
+        return PROVOICE_CODEC;
     }
 
     @Override
@@ -64,7 +64,7 @@ public class EDACSProVoiceAudioModule extends ImbeAudioModule
     {
         if(hasAudioCodec() && message instanceof EDACSProVoiceMessage pv && pv.isValid())
         {
-            for(byte[] frame : pv.getImbeFrames())
+            for(byte[] frame : pv.getPackedImbe7100Frames())
             {
                 try
                 {
