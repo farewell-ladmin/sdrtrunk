@@ -51,6 +51,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     public static final String MAX_TRAFFIC_CHANNELS_EXCEEDED = "MAX TRAFFIC CHANNELS EXCEEDED";
 
     private final int mTrafficChannelPoolSize;
+    private DecodeConfigEDACS mDecodeConfig;
 
     private Queue<Channel> mAvailableTrafficChannelQueue = new ConcurrentLinkedQueue<>();
     private List<Channel> mManagedTrafficChannels;
@@ -142,6 +143,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
         SourceConfigTuner sourceConfig = new SourceConfigTuner();
         sourceConfig.setFrequency(edacsChannel.getDownlinkFrequency());
         trafficChannel.setSourceConfiguration(sourceConfig);
+        trafficChannel.setDecodeConfiguration(getTrafficDecodeConfiguration(message));
         mAllocatedTrafficChannelMap.put(edacsChannel, trafficChannel);
         getInterModuleEventBus().post(new ChannelStartProcessingRequest(trafficChannel, edacsChannel,
             identifierCollection, this));
@@ -163,6 +165,11 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
      */
     public void createTrafficChannels(Channel parentChannel, io.github.dsheirer.module.decode.config.DecodeConfiguration decodeConfig)
     {
+        if(decodeConfig instanceof DecodeConfigEDACS edacsConfig)
+        {
+            mDecodeConfig = edacsConfig;
+        }
+
         List<Channel> trafficChannelList = new ArrayList<>();
 
         for(int x = 0; x < mTrafficChannelPoolSize; x++)
@@ -180,6 +187,24 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
 
         mAvailableTrafficChannelQueue.addAll(trafficChannelList);
         mManagedTrafficChannels = Collections.unmodifiableList(trafficChannelList);
+    }
+
+    private DecodeConfigEDACS getTrafficDecodeConfiguration(EDACSMessage message)
+    {
+        DecodeConfigEDACS config = new DecodeConfigEDACS();
+
+        if(mDecodeConfig != null)
+        {
+            config.setLcnFrequencies(mDecodeConfig.getLcnFrequencies());
+            config.setVoiceMode(mDecodeConfig.resolveVoiceMode(message.isDigital()));
+        }
+        else
+        {
+            config.setVoiceMode(message.isDigital() ? DecodeConfigEDACS.VoiceMode.PROVOICE :
+                    DecodeConfigEDACS.VoiceMode.ANALOG);
+        }
+
+        return config;
     }
 
     public void broadcast(DecodeEvent decodeEvent)

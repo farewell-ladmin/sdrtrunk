@@ -95,14 +95,10 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         float[] demodulated = mFMDemodulator.demodulate(filteredI, filteredQ);
 
-        // Resample from the decimated rate (typically 50 kHz from the
-        // channelizer) down to 24 kHz for the sync detector. The 24/50 ~= 0.48
-        // ratio produces a uniform 2:1 downsample in the existing
-        // sample-and-hold resampler, which is important for clean symbol
-        // timing. 24 kHz / 9600 baud = 2.5 sps (fractional) but the
-        // 1-bit-error-tolerant 48-bit sync match in EDACSFrameProcessor
-        // handles the resulting BER.
-        float[] resampled = resample(demodulated, mDecimatedRate, 24000.0);
+        // Resample from the decimated channelizer rate to 48 kHz so EDACS
+        // 9600 baud symbols have exactly 5 samples/symbol, matching DSD-FME's
+        // rtl_fm path and center-sample symbol timing.
+        float[] resampled = resample(demodulated, mDecimatedRate, 48000.0);
 
         mSyncDetector.process(resampled, getMessageListener());
     }
@@ -131,9 +127,9 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         mIBasebandFilter = FilterFactory.getRealFilter(coefficients);
         mQBasebandFilter = FilterFactory.getRealFilter(coefficients);
 
-        mLog.info("EDACS decoder sample rate: " + mDecimatedRate + " (decimation: " + decimation + ") -> 24 kHz");
+        mLog.info("EDACS decoder sample rate: " + mDecimatedRate + " (decimation: " + decimation + ") -> 48 kHz");
 
-        mSyncDetector.setSampleRate(24000.0);
+        mSyncDetector.setSampleRate(48000.0);
     }
 
     public class SourceEventProcessor implements Listener<SourceEvent>

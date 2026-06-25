@@ -48,7 +48,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       from the FM pipeline quality.</li>
  *   <li>{@link #testEdacsFromWavFile()} feeds the FM-demodulated audio
  *       capture into the full {@link EDACSSyncDetector} pipeline, including
- *       the FM AFC bit-detection stage.</li>
+ *       the FM AFC bit-detection stage. This WAV path is the authoritative
+ *       parity check against DSD-FME.</li>
  * </ol>
  *
  * <p>Reference recordings:</p>
@@ -59,10 +60,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       from rtl_fm, same source</li>
  * </ul>
  *
- * <p>Reference DSD-FME log: {@code dsd-output_v4.txt} shows ~80 sync events
+ * <p>Reference DSD-FME log: {@code dsd-output_v4.txt} shows clean decoding
  * over 55 s including: System Info (CC LCN 10), Adjacent Site, Extended
  * Addressing (Site 01, Area 09), System Dynamic Regroup Plan Bitmap, and
- * 1 visible Digital Group Call (TG 0x128=296, src 0xF49=3913, LCN 6).</p>
+ * Digital Group Calls including TG 296, source 3913, LCN 6.</p>
  */
 public class EDACSDecoderTest
 {
@@ -119,7 +120,7 @@ public class EDACSDecoderTest
                 {
                     // 0s are weak-positive artifacts in this capture; treat
                     // as bit 0 (matching the 1-byte convention above) so
-                    // they don't break the alternating dotting pattern.
+                    // they don't break the alternating sync pattern.
                     zeros++;
                     processor.processBit(0, listener);
                 }
@@ -151,6 +152,7 @@ public class EDACSDecoderTest
         detector.process(samples, listener);
 
         reportResults("WAV", detector.getFrameProcessor(), messages, samples.length, 0, 0, 0, 0);
+        assertReferenceBehavior(messages);
     }
 
     private void reportResults(String source, EDACSFrameProcessor processor, List<IMessage> messages,
@@ -159,6 +161,7 @@ public class EDACSDecoderTest
         int detected = processor.getFramesDetected();
         int bchPass = processor.getBchPasses();
         int bchFail = processor.getBchFails();
+        int oneWordRejects = processor.getOneWordBchRejects();
         int decoded = processor.getFramesDecoded();
         double bchRate = (bchPass + bchFail) > 0 ? (bchPass * 100.0 / (bchPass + bchFail)) : 0.0;
 
@@ -169,9 +172,10 @@ public class EDACSDecoderTest
             System.out.println("Input distribution: zeros=" + zeros + " ones=" + ones +
                     " threes=" + threes + " others=" + others);
         }
-        System.out.println("Frames detected (dotting threshold):  " + detected);
+        System.out.println("Frames detected (48-bit sync):        " + detected);
         System.out.println("Frames BCH pass:                       " + bchPass);
         System.out.println("Frames BCH fail:                       " + bchFail);
+        System.out.println("Frames rejected with one BCH word:     " + oneWordRejects);
         System.out.println("BCH pass rate:                         " + String.format("%.1f%%", bchRate));
         System.out.println("Frames producing messages:             " + decoded);
         System.out.println("Messages dispatched:                   " + messages.size());
@@ -183,12 +187,35 @@ public class EDACSDecoderTest
         }
 
         Map<EDACSMessageType, Integer> histogram = new EnumMap<>(EDACSMessageType.class);
+        Map<Integer, Integer> mt1Histogram = new java.util.TreeMap<>();
+        Map<Integer, Integer> mt2Histogram = new java.util.TreeMap<>();
+        Map<Integer, Integer> secondMt1Histogram = new java.util.TreeMap<>();
+        Map<Integer, Integer> secondMt2Histogram = new java.util.TreeMap<>();
         int known = 0;
         for(IMessage m : messages)
         {
             if(m instanceof EDACSMessage edacs)
             {
                 histogram.merge(edacs.getMessageType(), 1, Integer::sum);
+                int payload = getInt(edacs.getData(), 0, 28);
+                int mt1 = (payload >> 23) & 0x1F;
+                int mt2 = (payload >> 19) & 0x0F;
+                mt1Histogram.merge(mt1, 1, Integer::sum);
+                if(mt1 == 0x1F)
+                {
+                    mt2Histogram.merge(mt2, 1, Integer::sum);
+                }
+                if(edacs.getData2() != null)
+                {
+                    int payload2 = getInt(edacs.getData2(), 0, 28);
+                    int secondMt1 = (payload2 >> 23) & 0x1F;
+                    int secondMt2 = (payload2 >> 19) & 0x0F;
+                    secondMt1Histogram.merge(secondMt1, 1, Integer::sum);
+                    if(secondMt1 == 0x1F)
+                    {
+                        secondMt2Histogram.merge(secondMt2, 1, Integer::sum);
+                    }
+                }
                 if(edacs.getMessageType() != EDACSMessageType.UNKNOWN)
                 {
                     known++;
@@ -208,6 +235,10 @@ public class EDACSDecoderTest
         double knownPct = total > 0 ? (classified * 100.0 / total) : 0.0;
         System.out.println(String.format("\nClassified: %d / %d (%.1f%%)  Unknown: %d",
                 classified, total, knownPct, total - classified));
+        printOpcodeHistogram("MT1 histogram", mt1Histogram);
+        printOpcodeHistogram("MT2 histogram for MT1=1F", mt2Histogram);
+        printOpcodeHistogram("Second word MT1 histogram", secondMt1Histogram);
+        printOpcodeHistogram("Second word MT2 histogram for MT1=1F", secondMt2Histogram);
 
         // Spot check key messages
         System.out.println();
@@ -222,6 +253,28 @@ public class EDACSDecoderTest
         printFirstOfType(messages, EDACSMessageType.ALL_CALL, "First ALL_CALL");
     }
 
+    private void printOpcodeHistogram(String label, Map<Integer, Integer> histogram)
+    {
+        System.out.println("\n--- " + label + " ---");
+        for(Map.Entry<Integer, Integer> entry : histogram.entrySet())
+        {
+            System.out.println(String.format("  %02X  %5d", entry.getKey(), entry.getValue()));
+        }
+    }
+
+    private static int getInt(CorrectedBinaryMessage msg, int offset, int length)
+    {
+        int value = 0;
+        for(int x = 0; x < length; x++)
+        {
+            if(msg.get(offset + x))
+            {
+                value |= (1 << (length - 1 - x));
+            }
+        }
+        return value;
+    }
+
     private void printFirstOfType(List<IMessage> messages, EDACSMessageType type, String label)
     {
         for(IMessage m : messages)
@@ -232,6 +285,69 @@ public class EDACSDecoderTest
                 return;
             }
         }
+    }
+
+    private void assertReferenceBehavior(List<IMessage> messages)
+    {
+        Map<EDACSMessageType, Integer> histogram = new EnumMap<>(EDACSMessageType.class);
+        int unknown = 0;
+
+        for(IMessage message : messages)
+        {
+            if(message instanceof EDACSMessage edacs)
+            {
+                histogram.merge(edacs.getMessageType(), 1, Integer::sum);
+                if(edacs.getMessageType() == EDACSMessageType.UNKNOWN)
+                {
+                    unknown++;
+                }
+            }
+        }
+
+        assertEquals(0, unknown, "WAV decode should not produce UNKNOWN messages when aligned with DSD-FME");
+        assertCountWithin(histogram, EDACSMessageType.EXTENDED_ADDRESSING, 684, 20);
+        assertCountWithin(histogram, EDACSMessageType.SYSTEM_INFO, 452, 10);
+        assertCountWithin(histogram, EDACSMessageType.DYNAMIC_REGROUP_PLAN, 300, 15);
+        assertCountWithin(histogram, EDACSMessageType.ADJACENT_SITE, 149, 10);
+        assertCountWithin(histogram, EDACSMessageType.DIGITAL_GROUP_CALL, 134, 20);
+        assertCountWithin(histogram, EDACSMessageType.LOGIN, 7, 2);
+        assertCountWithin(histogram, EDACSMessageType.CHANNEL_ASSIGNMENT, 6, 2);
+
+        EDACSMessage systemInfo = firstOfType(messages, EDACSMessageType.SYSTEM_INFO);
+        assertNotNull(systemInfo, "Expected System Info message");
+        assertEquals(0, systemInfo.getSystemId(), "Expected MBTA OTA system ID 0000");
+        assertEquals(10, systemInfo.getCcLcn(), "Expected MBTA CC LCN 10");
+
+        EDACSMessage extendedAddressing = firstOfType(messages, EDACSMessageType.EXTENDED_ADDRESSING);
+        assertNotNull(extendedAddressing, "Expected Extended Addressing message");
+        assertEquals(1, extendedAddressing.getSiteId(), "Expected MBTA site 1");
+        assertEquals(9, extendedAddressing.getArea(), "Expected MBTA area 9");
+
+        assertTrue(messages.stream().anyMatch(message -> message instanceof EDACSMessage edacs &&
+                edacs.getMessageType() == EDACSMessageType.DIGITAL_GROUP_CALL && edacs.getGroup() == 296 &&
+                        edacs.getSource() == 3913 && edacs.getLCN() == 6),
+                "Expected DSD-FME-matching digital grant TG 296 source 3913 LCN 6");
+    }
+
+    private void assertCountWithin(Map<EDACSMessageType, Integer> histogram, EDACSMessageType type, int expected,
+                                   int tolerance)
+    {
+        int actual = histogram.getOrDefault(type, 0);
+        assertTrue(Math.abs(actual - expected) <= tolerance,
+                "Expected " + type + " count within " + tolerance + " of " + expected + ", actual " + actual);
+    }
+
+    private EDACSMessage firstOfType(List<IMessage> messages, EDACSMessageType type)
+    {
+        for(IMessage message : messages)
+        {
+            if(message instanceof EDACSMessage edacs && edacs.getMessageType() == type)
+            {
+                return edacs;
+            }
+        }
+
+        return null;
     }
 
     /**

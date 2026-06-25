@@ -126,7 +126,7 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
     private void processChannelGrant(EDACSMessage message)
     {
         int lcn = message.getLCN();
-        if(lcn <= 0)
+        if(lcn <= 0 || lcn > 25)
         {
             return;
         }

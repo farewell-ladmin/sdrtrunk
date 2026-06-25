@@ -22,6 +22,7 @@ public class EDACSMessage extends Message
 {
     private EDACSMessageType mMessageType;
     private CorrectedBinaryMessage mData;
+    private CorrectedBinaryMessage mData2;
     private String mDetails;
 
     /** Talkgroup for GROUP_CALL, LOGIN, ALL_CALL */
@@ -65,9 +66,16 @@ public class EDACSMessage extends Message
 
     public EDACSMessage(EDACSMessageType messageType, CorrectedBinaryMessage data, long timestamp)
     {
+        this(messageType, data, null, timestamp);
+    }
+
+    public EDACSMessage(EDACSMessageType messageType, CorrectedBinaryMessage data, CorrectedBinaryMessage data2,
+                        long timestamp)
+    {
         super(timestamp);
         mMessageType = messageType;
         mData = data;
+        mData2 = data2;
     }
 
     public EDACSMessageType getMessageType()
@@ -83,6 +91,11 @@ public class EDACSMessage extends Message
     public CorrectedBinaryMessage getData()
     {
         return mData;
+    }
+
+    public CorrectedBinaryMessage getData2()
+    {
+        return mData2;
     }
 
     public int getGroup() { return mGroup; }

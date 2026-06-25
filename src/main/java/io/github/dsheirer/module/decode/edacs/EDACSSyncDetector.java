@@ -11,11 +11,9 @@ import org.slf4j.LoggerFactory;
  * extracts the GFSK bit stream.
  *
  * <p>Bit detection uses DSD-FME-style single-sample-at-the-symbol-center
- * (see DSD-FME {@code dsd_symbol.c}: for GFSK at 5 sps, sample at i=2;
- * equivalent for 2.5 sps is to use the LAST sample in the bit window,
- * which is the closest integer sample to the symbol center). The
- * mean-deviation approach used previously produced noisy bits at
- * 2.5 sps because it averages across bit boundaries, leading to
+ * (see DSD-FME {@code dsd_symbol.c}: for GFSK at 5 sps, sample at i=2).
+ * The mean-deviation approach used previously produced noisy bits because
+ * it averages across bit boundaries, leading to
  * BCH false-failures that prevented the control channel from being
  * reliably decoded on live FM-demodulated signals.</p>
  *
@@ -28,8 +26,8 @@ public class EDACSSyncDetector
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSSyncDetector.class);
 
-    /** AFC exponential moving average alpha. 0.05 -> settles in ~20 samples. */
-    private static final double AFC_ALPHA = 0.05;
+    /** AFC exponential moving average alpha. Slow enough to avoid tracking symbol data. */
+    private static final double AFC_ALPHA = 0.001;
 
     /** DC bias clamp to prevent the AFC from wandering far from the carrier. */
     private static final float AFC_MAX = 2.0f;
@@ -48,7 +46,7 @@ public class EDACSSyncDetector
     public void setSampleRate(double sampleRate)
     {
         mSamplesPerSymbol = sampleRate / 9600.0;
-        mSampleAccum = 0;
+        mSampleAccum = mSamplesPerSymbol / 2.0;
     }
 
     public void process(float[] demodulated, Listener<IMessage> messageListener)
@@ -75,12 +73,9 @@ public class EDACSSyncDetector
             }
             mSampleAccum -= mSamplesPerSymbol;
 
-            // DSD-FME single-sample-at-symbol-center bit detection.
-            // The last sample in the bit window is the closest integer
-            // sample to the symbol center; using it (instead of averaging
-            // across the window) avoids mixing in samples from adjacent
-            // bits when the sps ratio is fractional (e.g. 2.5 at 24 kHz).
-            int bit = mLastDeviation >= 0 ? 1 : 0;
+            // DSD-FME single-sample-at-symbol-center bit detection. This
+            // avoids mixing adjacent symbols at the 9600 baud transitions.
+            int bit = mLastDeviation >= 0 ? 0 : 1;
             mFrameProcessor.processBit(bit, messageListener);
 
             if(System.currentTimeMillis() - mLastStatsTime > 10000)

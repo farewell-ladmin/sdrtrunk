@@ -879,6 +879,7 @@ public class DecoderFactory
                     DecodeConfigEDACS originalEDACS = (DecodeConfigEDACS)config;
                     DecodeConfigEDACS copyEDACS = new DecodeConfigEDACS();
                     copyEDACS.setLcnFrequencies(originalEDACS.getLcnFrequencies());
+                    copyEDACS.setVoiceMode(originalEDACS.getVoiceMode());
                     return copyEDACS;
                 case MOTOROLA_TYPE_II:
                     DecodeConfigMotorolaTypeII originalMoto = (DecodeConfigMotorolaTypeII)config;

@@ -35,7 +35,7 @@ public class EDACSMessageFactory
         int mt1 = (msg_1 >> 23) & 0x1F;
         int mt2 = (msg_1 >> 19) & 0x0F;
 
-        EDACSMessage message = new EDACSMessage(EDACSMessageType.UNKNOWN, data, timestamp);
+        EDACSMessage message = new EDACSMessage(EDACSMessageType.UNKNOWN, data, data2, timestamp);
         StringBuilder details = new StringBuilder();
 
         if(mt1 == 0x1F)

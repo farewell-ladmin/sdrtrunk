@@ -5,10 +5,21 @@
 // of audio) interleaved two-at-a-time.
 package io.github.dsheirer.module.decode.edacs;
 
+import io.github.dsheirer.dsp.filter.FilterFactory;
+import io.github.dsheirer.dsp.filter.decimate.DecimationFilterFactory;
+import io.github.dsheirer.dsp.filter.decimate.IRealDecimationFilter;
+import io.github.dsheirer.dsp.filter.fir.real.IRealFilter;
+import io.github.dsheirer.dsp.fm.FmDemodulatorFactory;
+import io.github.dsheirer.dsp.fm.IDemodulator;
 import io.github.dsheirer.message.IMessage;
+import io.github.dsheirer.message.IMessageProvider;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.decode.edacs.message.EDACSProVoiceMessage;
 import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.sample.complex.ComplexSamples;
+import io.github.dsheirer.sample.complex.IComplexSamplesListener;
+import io.github.dsheirer.source.ISourceEventListener;
+import io.github.dsheirer.source.SourceEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,7 +49,8 @@ import org.slf4j.LoggerFactory;
  * bits. At 9600 baud that's 82.5 ms; at 5 samples/symbol with a 48 kHz
  * sample rate that's 3960 samples per ProVoice frame.</p>
  */
-public class EDACSProVoiceDecoder extends Module
+public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListener, Listener<ComplexSamples>,
+        ISourceEventListener, IMessageProvider
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSProVoiceDecoder.class);
 
@@ -74,10 +86,84 @@ public class EDACSProVoiceDecoder extends Module
     private static final double AFC_ALPHA = 0.05;
     private static final float AFC_MAX = 2.0f;
 
+    private IDemodulator mFMDemodulator = FmDemodulatorFactory.getFmDemodulator();
+    private IRealFilter mIBasebandFilter;
+    private IRealFilter mQBasebandFilter;
+    private IRealDecimationFilter mIDecimationFilter;
+    private IRealDecimationFilter mQDecimationFilter;
+    private double mDecimatedRate = 48000.0;
+    private float[] mResampleBuffer = new float[0];
+    private double mResamplePhase = 0;
+    private boolean mResampleReady = false;
+    private Listener<IMessage> mMessageListener;
+    private final SourceEventProcessor mSourceEventProcessor = new SourceEventProcessor();
+
+    @Override
+    public Listener<ComplexSamples> getComplexSamplesListener()
+    {
+        return this;
+    }
+
+    @Override
+    public Listener<SourceEvent> getSourceEventListener()
+    {
+        return mSourceEventProcessor;
+    }
+
+    @Override
+    public void setMessageListener(Listener<IMessage> listener)
+    {
+        mMessageListener = listener;
+    }
+
+    @Override
+    public void removeMessageListener()
+    {
+        mMessageListener = null;
+    }
+
+    @Override
+    public void receive(ComplexSamples samples)
+    {
+        if(mIDecimationFilter == null)
+        {
+            return;
+        }
+
+        float[] decimatedI = mIDecimationFilter.decimateReal(samples.i());
+        float[] decimatedQ = mQDecimationFilter.decimateReal(samples.q());
+        float[] filteredI = mIBasebandFilter.filter(decimatedI);
+        float[] filteredQ = mQBasebandFilter.filter(decimatedQ);
+        float[] demodulated = mFMDemodulator.demodulate(filteredI, filteredQ);
+        process(resample(demodulated, mDecimatedRate, 48000.0), mMessageListener);
+    }
+
     public void setSampleRate(double sampleRate)
     {
         mSamplesPerSymbol = sampleRate / 9600.0;
         mSampleAccum = 0;
+    }
+
+    private void setSourceSampleRate(double sampleRate)
+    {
+        int decimation = 1;
+        while((sampleRate / decimation) >= 96000)
+        {
+            decimation *= 2;
+        }
+
+        mIDecimationFilter = DecimationFilterFactory.getRealDecimationFilter(decimation);
+        mQDecimationFilter = DecimationFilterFactory.getRealDecimationFilter(decimation);
+        mDecimatedRate = sampleRate / decimation;
+
+        float[] coefficients = FilterFactory.getLowPass(mDecimatedRate, 9600, 12000, 60,
+                io.github.dsheirer.dsp.window.WindowType.HAMMING, true);
+
+        mIBasebandFilter = FilterFactory.getRealFilter(coefficients);
+        mQBasebandFilter = FilterFactory.getRealFilter(coefficients);
+        setSampleRate(48000.0);
+        mLog.info("EDACS ProVoice decoder sample rate: " + mDecimatedRate +
+                " (decimation: " + decimation + ") -> 48 kHz");
     }
 
     public void process(float[] demodulated, Listener<IMessage> messageListener)
@@ -209,6 +295,52 @@ public class EDACSProVoiceDecoder extends Module
     public int getFramesDetected() { return mFramesDetected; }
     public int getFramesDecoded() { return mFramesDecoded; }
     public int getDecodeErrors() { return mDecodeErrors; }
+
+    private float[] resample(float[] input, double inputRate, double outputRate)
+    {
+        double step = outputRate / inputRate;
+        int estimateLen = (int)(input.length * step) + 2;
+        if(mResampleBuffer.length < estimateLen)
+        {
+            mResampleBuffer = new float[estimateLen];
+        }
+
+        int outIdx = 0;
+        for(float sample : input)
+        {
+            mResamplePhase += step;
+            while(mResamplePhase >= 1.0)
+            {
+                mResamplePhase -= 1.0;
+                if(mResampleReady && outIdx < mResampleBuffer.length)
+                {
+                    mResampleBuffer[outIdx++] = sample;
+                }
+                else
+                {
+                    mResampleReady = true;
+                }
+            }
+        }
+
+        float[] result = new float[outIdx];
+        System.arraycopy(mResampleBuffer, 0, result, 0, outIdx);
+        return result;
+    }
+
+    public class SourceEventProcessor implements Listener<SourceEvent>
+    {
+        @Override
+        public void receive(SourceEvent sourceEvent)
+        {
+            if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_SAMPLE_RATE_CHANGE)
+            {
+                mResamplePhase = 0;
+                mResampleReady = false;
+                setSourceSampleRate(sourceEvent.getValue().doubleValue());
+            }
+        }
+    }
 
     @Override
     public void reset()
