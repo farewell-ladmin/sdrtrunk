@@ -28,6 +28,8 @@ public class EDACSProVoiceAudioModule extends ImbeAudioModule
     private final NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
     private final SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private int mFramesProcessed = 0;
+    private int mDecodeErrors = 0;
+    private long mLastDecodeErrorLogTimestamp = 0;
 
     public EDACSProVoiceAudioModule(UserPreferences userPreferences, AliasList aliasList)
     {
@@ -73,9 +75,25 @@ public class EDACSProVoiceAudioModule extends ImbeAudioModule
                 }
                 catch(Exception e)
                 {
-                    mLog.warn("ProVoice IMBE decode error: {}", e.getMessage());
+                    mDecodeErrors++;
+                    logDecodeError(e);
                 }
             }
+        }
+    }
+
+    private void logDecodeError(Exception exception)
+    {
+        long now = System.currentTimeMillis();
+
+        if(now - mLastDecodeErrorLogTimestamp > 10000)
+        {
+            mLastDecodeErrorLogTimestamp = now;
+            mLog.warn("ProVoice IMBE decode errors: {} latest: {}", mDecodeErrors, exception.getMessage());
+        }
+        else
+        {
+            mLog.debug("ProVoice IMBE decode error: {}", exception.getMessage());
         }
     }
 

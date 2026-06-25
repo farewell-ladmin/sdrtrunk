@@ -55,6 +55,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     public static final String MAX_TRAFFIC_CHANNELS_EXCEEDED = "MAX TRAFFIC CHANNELS EXCEEDED";
     private static final long CALL_STALE_MS = 3000;
     private static final long CALL_TEARDOWN_MS = 5000;
+    private static final long CALL_UPDATE_BROADCAST_INTERVAL_MS = 1000;
 
     private final int mTrafficChannelPoolSize;
     private DecodeConfigEDACS mDecodeConfig;
@@ -64,6 +65,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     private Map<EDACSChannel, Channel> mAllocatedTrafficChannelMap = new ConcurrentHashMap<>();
     private Map<EDACSChannel, DecodeEvent> mChannelGrantEventMap = new ConcurrentHashMap<>();
     private Map<EDACSChannel, Long> mLastGrantTimestampMap = new ConcurrentHashMap<>();
+    private Map<EDACSChannel, Long> mLastGrantBroadcastTimestampMap = new ConcurrentHashMap<>();
     private Set<EDACSChannel> mStaleCallSet = ConcurrentHashMap.newKeySet();
     private Set<EDACSChannel> mPendingTeardownSet = ConcurrentHashMap.newKeySet();
     private final TrafficChannelTeardownMonitor mTrafficChannelTeardownMonitor = new TrafficChannelTeardownMonitor();
@@ -113,7 +115,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                 mStaleCallSet.remove(edacsChannel);
                 mPendingTeardownSet.remove(edacsChannel);
                 existingEvent.update(message.getTimestamp());
-                broadcast(existingEvent);
+                broadcastGrantUpdate(edacsChannel, existingEvent, message.getTimestamp());
                 return;
             }
             else
@@ -138,6 +140,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
 
         mChannelGrantEventMap.put(edacsChannel, grantEvent);
         mLastGrantTimestampMap.put(edacsChannel, message.getTimestamp());
+        mLastGrantBroadcastTimestampMap.put(edacsChannel, message.getTimestamp());
         mStaleCallSet.remove(edacsChannel);
         mPendingTeardownSet.remove(edacsChannel);
 
@@ -265,6 +268,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     public void reset()
     {
         mLastGrantTimestampMap.clear();
+        mLastGrantBroadcastTimestampMap.clear();
         mStaleCallSet.clear();
         mPendingTeardownSet.clear();
     }
@@ -331,11 +335,23 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
         }
     }
 
+    private void broadcastGrantUpdate(EDACSChannel edacsChannel, DecodeEvent event, long timestamp)
+    {
+        long lastBroadcastTimestamp = mLastGrantBroadcastTimestampMap.getOrDefault(edacsChannel, 0L);
+
+        if(timestamp - lastBroadcastTimestamp >= CALL_UPDATE_BROADCAST_INTERVAL_MS)
+        {
+            mLastGrantBroadcastTimestampMap.put(edacsChannel, timestamp);
+            broadcast(event);
+        }
+    }
+
     private void clearChannelState(EDACSChannel edacsChannel)
     {
         mAllocatedTrafficChannelMap.remove(edacsChannel);
         mChannelGrantEventMap.remove(edacsChannel);
         mLastGrantTimestampMap.remove(edacsChannel);
+        mLastGrantBroadcastTimestampMap.remove(edacsChannel);
         mStaleCallSet.remove(edacsChannel);
         mPendingTeardownSet.remove(edacsChannel);
     }
@@ -393,6 +409,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                         {
                             mAllocatedTrafficChannelMap.remove(toRemove);
                             mLastGrantTimestampMap.remove(toRemove);
+                            mLastGrantBroadcastTimestampMap.remove(toRemove);
                             mStaleCallSet.remove(toRemove);
                             mPendingTeardownSet.remove(toRemove);
                             mAvailableTrafficChannelQueue.add(channel);
@@ -413,6 +430,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                         {
                             mAllocatedTrafficChannelMap.remove(rejected);
                             mLastGrantTimestampMap.remove(rejected);
+                            mLastGrantBroadcastTimestampMap.remove(rejected);
                             mStaleCallSet.remove(rejected);
                             mPendingTeardownSet.remove(rejected);
                             mAvailableTrafficChannelQueue.add(channel);
