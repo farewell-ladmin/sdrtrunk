@@ -64,6 +64,7 @@ import io.github.dsheirer.module.decode.lj1200.LJ1200MessageFilter;
 import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoder;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoderState;
+import io.github.dsheirer.module.decode.edacs.EDACSTrafficChannelManager;
 import io.github.dsheirer.module.decode.moto.BandplanType;
 import io.github.dsheirer.module.decode.moto.DecodeConfigMotorolaTypeII;
 import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoder;
@@ -486,10 +487,24 @@ public class DecoderFactory
      * @param decodeConfig for the channel
      */
     private static void processEDACS(UserPreferences userPreferences, Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
-        EDACSDecoder decoder = new EDACSDecoder();
-        modules.add(decoder);
-        modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
-        modules.add(new EDACSDecoderState());
+        if(channel.isTrafficChannel())
+        {
+            // Analog traffic channel: NBFM decoder + audio
+            DecodeConfigNBFM nbfmConfig = new DecodeConfigNBFM();
+            modules.add(new NBFMDecoder(nbfmConfig));
+            modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig, false, Protocol.EDACS));
+            modules.add(new AudioModule(aliasList, 0, 60000, AUDIO_FILTER_ENABLE));
+        }
+        else
+        {
+            // Control channel: EDACS trunking decoder + traffic channel manager
+            // (no AudioModule — CC is data-only, audio lives on traffic channels)
+            modules.add(new EDACSDecoder());
+            EDACSTrafficChannelManager tcm = new EDACSTrafficChannelManager(20);
+            tcm.createTrafficChannels(channel, decodeConfig);
+            modules.add(tcm);
+            modules.add(new EDACSDecoderState(channel, tcm));
+        }
     }
 
     /**
