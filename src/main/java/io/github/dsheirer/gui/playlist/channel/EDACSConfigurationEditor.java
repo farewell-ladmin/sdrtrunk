@@ -272,6 +272,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         {
             List<RecorderType> types = new ArrayList<>();
             types.add(RecorderType.BASEBAND);
+            types.add(RecorderType.TRAFFIC_BASEBAND);
             mRecordConfigurationEditor = new RecordConfigurationEditor(types);
             mRecordConfigurationEditor.setDisable(true);
             mRecordConfigurationEditor.modifiedProperty()
