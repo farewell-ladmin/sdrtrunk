@@ -29,8 +29,8 @@ public class EDACSSyncDetector
     /** EDACS control channels are resampled to 48 kHz, or 5 samples/symbol. */
     private static final int PHASE_CANDIDATES = 5;
 
-    /** Reacquire only after the current phase has been silent for this long. */
-    private static final long PHASE_STALE_SAMPLES = 48000L * 20L;
+    /** Reacquire quickly when the active phase stops producing valid frames. */
+    private static final long PHASE_STALE_SAMPLES = 48000L;
 
     /** AFC exponential moving average alpha. Slow enough to avoid tracking symbol data. */
     private static final double AFC_ALPHA = 0.001;
@@ -48,7 +48,7 @@ public class EDACSSyncDetector
     private boolean mPhaseScanMode = false;
     private int mActivePhase = 0;
     private long mLastActiveDecodeSampleIndex = 0;
-    private boolean mRecoveryMode = false;
+    private boolean mLocked = false;
     private float mLastSample = 0f;
     private float mLastDeviation = 0f;
     private double mAfc = 0.0;
@@ -62,7 +62,7 @@ public class EDACSSyncDetector
         mSampleIndex = 0;
         mActivePhase = (int)Math.floor(mSamplesPerSymbol / 2.0);
         mLastActiveDecodeSampleIndex = 0;
-        mRecoveryMode = false;
+        mLocked = false;
         mPhaseScanMode = Math.abs(mSamplesPerSymbol - PHASE_CANDIDATES) < 0.01;
 
         if(mPhaseScanMode)
@@ -95,48 +95,45 @@ public class EDACSSyncDetector
             if(mPhaseScanMode)
             {
                 int phase = (int)(mSampleIndex % PHASE_CANDIDATES);
-
-                if(phase == mActivePhase)
+                mPhaseFrameProcessors[phase].processBit(bit, message ->
                 {
-                    mPhaseFrameProcessors[phase].processBit(bit, message ->
+                    if(messageListener == null)
                     {
-                        mLastActiveDecodeSampleIndex = mSampleIndex;
-
-                        if(mRecoveryMode)
-                        {
-                            mRecoveryMode = false;
-                            mLog.info("EDACS control channel recovered on phase " + mActivePhase);
-                        }
-
-                        if(messageListener != null)
-                        {
-                            messageListener.receive(message);
-                        }
-                    });
-                }
-                else if(isActivePhaseStale())
-                {
-                    if(!mRecoveryMode)
-                    {
-                        resetRecoveryPhases();
-                        mRecoveryMode = true;
-                        mLog.info("EDACS control channel phase " + mActivePhase +
-                                " stale; scanning alternate symbol phases");
+                        return;
                     }
 
-                    mPhaseFrameProcessors[phase].processBit(bit, message ->
+                    if(phase == mActivePhase)
                     {
+                        mLastActiveDecodeSampleIndex = mSampleIndex;
+
+                        if(!mLocked)
+                        {
+                            mLocked = true;
+                            mLog.info("EDACS control channel locked on phase " + phase);
+                        }
+
+                        messageListener.receive(message);
+                    }
+                    else if(isActivePhaseStale())
+                    {
+                        int previousPhase = mActivePhase;
                         mActivePhase = phase;
                         mLastActiveDecodeSampleIndex = mSampleIndex;
-                        mRecoveryMode = false;
-                        mLog.info("EDACS control channel reacquired on phase " + phase);
 
-                        if(messageListener != null)
+                        if(!mLocked)
                         {
-                            messageListener.receive(message);
+                            mLocked = true;
+                            mLog.info("EDACS control channel locked on phase " + phase);
                         }
-                    });
-                }
+                        else
+                        {
+                            mLog.info("EDACS control channel reacquired on phase " + phase +
+                                    " from stale phase " + previousPhase);
+                        }
+
+                        messageListener.receive(message);
+                    }
+                });
 
                 mSampleIndex++;
             }
@@ -180,18 +177,12 @@ public class EDACSSyncDetector
 
     private boolean isActivePhaseStale()
     {
-        return mLastActiveDecodeSampleIndex > 0 && mSampleIndex - mLastActiveDecodeSampleIndex > PHASE_STALE_SAMPLES;
-    }
-
-    private void resetRecoveryPhases()
-    {
-        for(int x = 0; x < mPhaseFrameProcessors.length; x++)
+        if(mLastActiveDecodeSampleIndex == 0)
         {
-            if(x != mActivePhase)
-            {
-                mPhaseFrameProcessors[x] = new EDACSFrameProcessor();
-            }
+            return mSampleIndex > PHASE_STALE_SAMPLES;
         }
+
+        return mSampleIndex - mLastActiveDecodeSampleIndex > PHASE_STALE_SAMPLES;
     }
 
     /**

@@ -40,8 +40,9 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
     private final SourceEventProcessor mSourceEventProcessor = new SourceEventProcessor();
 
     private float[] mResampleBuffer = new float[0];
-    private double mResamplePhase = 0;
-    private boolean mResampleReady = false;
+    private double mResampleCursor = 0;
+    private float mLastResampleInput = 0;
+    private boolean mHasLastResampleInput = false;
 
     public EDACSDecoder()
     {
@@ -139,8 +140,8 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         {
             if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_SAMPLE_RATE_CHANGE)
             {
-                mResamplePhase = 0;
-                mResampleReady = false;
+                mResampleCursor = 0;
+                mHasLastResampleInput = false;
                 setSampleRate(sourceEvent.getValue().doubleValue());
             }
         }
@@ -148,24 +149,38 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
     private float[] resample(float[] input, double inputRate, double outputRate)
     {
-        double step = outputRate / inputRate;
-        int estimateLen = (int)(input.length * step) + 2;
+        if(input.length == 0)
+        {
+            return input;
+        }
+
+        if(!mHasLastResampleInput)
+        {
+            mLastResampleInput = input[0];
+            mHasLastResampleInput = true;
+            mResampleCursor = 1.0;
+        }
+
+        double step = inputRate / outputRate;
+        int estimateLen = (int)(input.length / step) + 2;
         if(mResampleBuffer.length < estimateLen)
+        {
             mResampleBuffer = new float[estimateLen];
+        }
 
         int outIdx = 0;
-        for(int i = 0; i < input.length; i++)
+        while(mResampleCursor < input.length)
         {
-            mResamplePhase += step;
-            while(mResamplePhase >= 1.0)
-            {
-                mResamplePhase -= 1.0;
-                if(mResampleReady && outIdx < mResampleBuffer.length)
-                    mResampleBuffer[outIdx++] = input[i];
-                else
-                    mResampleReady = true;
-            }
+            int index = (int)mResampleCursor;
+            double fraction = mResampleCursor - index;
+            float previous = index == 0 ? mLastResampleInput : input[index - 1];
+            float current = input[index];
+            mResampleBuffer[outIdx++] = (float)(previous + (current - previous) * fraction);
+            mResampleCursor += step;
         }
+
+        mResampleCursor -= input.length;
+        mLastResampleInput = input[input.length - 1];
 
         float[] result = new float[outIdx];
         System.arraycopy(mResampleBuffer, 0, result, 0, outIdx);
