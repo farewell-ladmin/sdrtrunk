@@ -38,10 +38,13 @@ import io.github.dsheirer.source.config.SourceConfiguration;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import java.util.ArrayList;
 import java.util.List;
+import javafx.geometry.HPos;
 import javafx.geometry.Insets;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TitledPane;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,6 +65,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     private EventLogConfigurationEditor mEventLogConfigurationEditor;
     private RecordConfigurationEditor mRecordConfigurationEditor;
     private TextArea mLcnFrequencyEditor;
+    private ComboBox<DecodeConfigEDACS.VoiceMode> mVoiceModeComboBox;
 
     public EDACSConfigurationEditor(PlaylistManager playlistManager, TunerManager tunerManager,
                                      UserPreferences userPreferences, IFilterProcessor filterProcessor)
@@ -106,16 +110,45 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
             vbox.getChildren().add(label);
 
             mLcnFrequencyEditor = new TextArea();
-            mLcnFrequencyEditor.setPrefRowCount(15);
+            mLcnFrequencyEditor.setPrefRowCount(12);
             mLcnFrequencyEditor.setPrefColumnCount(20);
             mLcnFrequencyEditor.setPromptText("851175000\n851225000\n851425000\n...");
             mLcnFrequencyEditor.textProperty().addListener((obs, old, val) -> modifiedProperty().set(true));
             vbox.getChildren().add(mLcnFrequencyEditor);
 
+            GridPane voiceGrid = new GridPane();
+            voiceGrid.setHgap(10);
+            voiceGrid.setVgap(5);
+            voiceGrid.setPadding(new Insets(8, 0, 0, 0));
+
+            Label voiceModeLabel = new Label("Voice Mode");
+            GridPane.setHalignment(voiceModeLabel, HPos.RIGHT);
+            GridPane.setConstraints(voiceModeLabel, 0, 0);
+            voiceGrid.getChildren().add(voiceModeLabel);
+
+            GridPane.setConstraints(getVoiceModeComboBox(), 1, 0);
+            voiceGrid.getChildren().add(getVoiceModeComboBox());
+
+            vbox.getChildren().add(voiceGrid);
+
             mDecoderPane.setContent(vbox);
         }
 
         return mDecoderPane;
+    }
+
+    private ComboBox<DecodeConfigEDACS.VoiceMode> getVoiceModeComboBox()
+    {
+        if(mVoiceModeComboBox == null)
+        {
+            mVoiceModeComboBox = new ComboBox<>();
+            mVoiceModeComboBox.getItems().addAll(DecodeConfigEDACS.VoiceMode.values());
+            mVoiceModeComboBox.getSelectionModel().select(DecodeConfigEDACS.VoiceMode.ANALOG);
+            mVoiceModeComboBox.getSelectionModel().selectedItemProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mVoiceModeComboBox;
     }
 
     private TitledPane getEventLogPane()
@@ -223,15 +256,18 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     protected void setDecoderConfiguration(DecodeConfiguration config)
     {
         mLcnFrequencyEditor.setDisable(config == null);
+        getVoiceModeComboBox().setDisable(config == null);
 
         if(config instanceof DecodeConfigEDACS decodeConfigEDACS)
         {
             String freqs = decodeConfigEDACS.getLcnFrequencies();
             mLcnFrequencyEditor.setText(freqs != null ? freqs.replace(",", "\n") : "");
+            getVoiceModeComboBox().getSelectionModel().select(decodeConfigEDACS.getVoiceMode());
         }
         else
         {
             mLcnFrequencyEditor.setText("");
+            getVoiceModeComboBox().getSelectionModel().select(DecodeConfigEDACS.VoiceMode.ANALOG);
         }
     }
 
@@ -253,6 +289,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         String text = mLcnFrequencyEditor.getText().trim();
         String csv = text.replaceAll("[\\r\\n]+", ",").replaceAll("\\s", "");
         config.setLcnFrequencies(csv);
+        config.setVoiceMode(getVoiceModeComboBox().getSelectionModel().getSelectedItem());
 
         getItem().setDecodeConfiguration(config);
     }
