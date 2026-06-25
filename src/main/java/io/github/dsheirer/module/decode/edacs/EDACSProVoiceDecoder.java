@@ -162,7 +162,7 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
         mIBasebandFilter = FilterFactory.getRealFilter(coefficients);
         mQBasebandFilter = FilterFactory.getRealFilter(coefficients);
         setSampleRate(48000.0);
-        mLog.info("EDACS ProVoice decoder sample rate: " + mDecimatedRate +
+        mLog.debug("EDACS ProVoice decoder sample rate: " + mDecimatedRate +
                 " (decimation: " + decimation + ") -> 48 kHz");
     }
 
@@ -214,7 +214,7 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
 
             if(System.currentTimeMillis() - mLastStatsTime > 10000)
             {
-                mLog.info("EDACS ProVoice - detected: " + mFramesDetected +
+                mLog.debug("EDACS ProVoice - detected: " + mFramesDetected +
                         " decoded: " + mFramesDecoded +
                         " errors: " + mDecodeErrors);
                 mLastStatsTime = System.currentTimeMillis();

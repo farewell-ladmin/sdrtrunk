@@ -103,7 +103,7 @@ public class EDACSFrameProcessor
 
         if(System.currentTimeMillis() - mLastStatsTime > 10000)
         {
-            mLog.info("EDACS FrameProcessor - sync_matches: " + mSyncMatches +
+            mLog.debug("EDACS FrameProcessor - sync_matches: " + mSyncMatches +
                     " detected: " + mFramesDetected +
                     " decoded: " + mFramesDecoded +
                     " BCH pass: " + mBchPasses + " fail: " + mBchFails +

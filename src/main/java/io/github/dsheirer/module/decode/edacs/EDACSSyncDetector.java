@@ -80,7 +80,7 @@ public class EDACSSyncDetector
 
             if(System.currentTimeMillis() - mLastStatsTime > 10000)
             {
-                mLog.info("EDACS Demod - afc: " + String.format("%.4f", mAfc) +
+                mLog.debug("EDACS Demod - afc: " + String.format("%.4f", mAfc) +
                         " sps: " + String.format("%.2f", mSamplesPerSymbol) +
                         " frames: " + mFrameProcessor.getFramesDecoded() +
                         " bch_pass: " + mFrameProcessor.getBchPasses() +

@@ -515,7 +515,9 @@ public class DecoderFactory
             // Control channel: EDACS trunking decoder + traffic channel manager
             // (no AudioModule — CC is data-only, audio lives on traffic channels)
             modules.add(new EDACSDecoder());
-            EDACSTrafficChannelManager tcm = new EDACSTrafficChannelManager(20);
+            int trafficChannelPoolSize = decodeConfig instanceof DecodeConfigEDACS edacsConfig ?
+                    edacsConfig.getTrafficChannelPoolSize() : DecodeConfigEDACS.TRAFFIC_CHANNEL_LIMIT_DEFAULT_EDACS;
+            EDACSTrafficChannelManager tcm = new EDACSTrafficChannelManager(trafficChannelPoolSize);
             tcm.createTrafficChannels(channel, decodeConfig);
             modules.add(tcm);
             modules.add(new EDACSDecoderState(channel, tcm));
@@ -880,6 +882,7 @@ public class DecoderFactory
                     DecodeConfigEDACS copyEDACS = new DecodeConfigEDACS();
                     copyEDACS.setLcnFrequencies(originalEDACS.getLcnFrequencies());
                     copyEDACS.setVoiceMode(originalEDACS.getVoiceMode());
+                    copyEDACS.setTrafficChannelPoolSize(originalEDACS.getTrafficChannelPoolSize());
                     return copyEDACS;
                 case MOTOROLA_TYPE_II:
                     DecodeConfigMotorolaTypeII originalMoto = (DecodeConfigMotorolaTypeII)config;

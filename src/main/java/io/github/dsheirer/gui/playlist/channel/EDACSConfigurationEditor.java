@@ -42,6 +42,8 @@ import javafx.geometry.HPos;
 import javafx.geometry.Insets;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.Spinner;
+import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TextArea;
 import javafx.scene.control.TitledPane;
 import javafx.scene.layout.GridPane;
@@ -66,6 +68,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     private RecordConfigurationEditor mRecordConfigurationEditor;
     private TextArea mLcnFrequencyEditor;
     private ComboBox<DecodeConfigEDACS.VoiceMode> mVoiceModeComboBox;
+    private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
 
     public EDACSConfigurationEditor(PlaylistManager playlistManager, TunerManager tunerManager,
                                      UserPreferences userPreferences, IFilterProcessor filterProcessor)
@@ -129,6 +132,14 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(getVoiceModeComboBox(), 1, 0);
             voiceGrid.getChildren().add(getVoiceModeComboBox());
 
+            Label poolSizeLabel = new Label("Traffic Channels");
+            GridPane.setHalignment(poolSizeLabel, HPos.RIGHT);
+            GridPane.setConstraints(poolSizeLabel, 0, 1);
+            voiceGrid.getChildren().add(poolSizeLabel);
+
+            GridPane.setConstraints(getTrafficChannelPoolSizeSpinner(), 1, 1);
+            voiceGrid.getChildren().add(getTrafficChannelPoolSizeSpinner());
+
             vbox.getChildren().add(voiceGrid);
 
             mDecoderPane.setContent(vbox);
@@ -149,6 +160,24 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         }
 
         return mVoiceModeComboBox;
+    }
+
+    private Spinner<Integer> getTrafficChannelPoolSizeSpinner()
+    {
+        if(mTrafficChannelPoolSizeSpinner == null)
+        {
+            mTrafficChannelPoolSizeSpinner = new Spinner<>();
+            mTrafficChannelPoolSizeSpinner.setTooltip(new javafx.scene.control.Tooltip(
+                    "Maximum simultaneous EDACS traffic channels. Lower values reduce CPU load on busy systems."));
+            mTrafficChannelPoolSizeSpinner.getStyleClass().add(Spinner.STYLE_CLASS_SPLIT_ARROWS_HORIZONTAL);
+            SpinnerValueFactory<Integer> svf = new SpinnerValueFactory.IntegerSpinnerValueFactory(0,
+                    DecodeConfigEDACS.TRAFFIC_CHANNEL_LIMIT_DEFAULT, DecodeConfigEDACS.TRAFFIC_CHANNEL_LIMIT_DEFAULT_EDACS);
+            mTrafficChannelPoolSizeSpinner.setValueFactory(svf);
+            mTrafficChannelPoolSizeSpinner.getValueFactory().valueProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mTrafficChannelPoolSizeSpinner;
     }
 
     private TitledPane getEventLogPane()
@@ -257,17 +286,20 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     {
         mLcnFrequencyEditor.setDisable(config == null);
         getVoiceModeComboBox().setDisable(config == null);
+        getTrafficChannelPoolSizeSpinner().setDisable(config == null);
 
         if(config instanceof DecodeConfigEDACS decodeConfigEDACS)
         {
             String freqs = decodeConfigEDACS.getLcnFrequencies();
             mLcnFrequencyEditor.setText(freqs != null ? freqs.replace(",", "\n") : "");
             getVoiceModeComboBox().getSelectionModel().select(decodeConfigEDACS.getVoiceMode());
+            getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfigEDACS.getTrafficChannelPoolSize());
         }
         else
         {
             mLcnFrequencyEditor.setText("");
             getVoiceModeComboBox().getSelectionModel().select(DecodeConfigEDACS.VoiceMode.ANALOG);
+            getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(DecodeConfigEDACS.TRAFFIC_CHANNEL_LIMIT_DEFAULT_EDACS);
         }
     }
 
@@ -290,6 +322,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         String csv = text.replaceAll("[\\r\\n]+", ",").replaceAll("\\s", "");
         config.setLcnFrequencies(csv);
         config.setVoiceMode(getVoiceModeComboBox().getSelectionModel().getSelectedItem());
+        config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
 
         getItem().setDecodeConfiguration(config);
     }

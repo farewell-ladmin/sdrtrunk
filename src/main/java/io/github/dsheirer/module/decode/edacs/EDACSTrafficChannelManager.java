@@ -170,7 +170,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
 
         broadcast(grantEvent);
 
-        mLog.info("EDACS GRANT: TG/Target=0x{} Source=0x{} LCN={} Freq={} ({})",
+        mLog.debug("EDACS GRANT: TG/Target=0x{} Source=0x{} LCN={} Freq={} ({})",
                 Integer.toHexString(message.getGroup()),
                 Integer.toHexString(message.getSource()),
                 edacsChannel.getChannelNumber(),

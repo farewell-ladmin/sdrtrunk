@@ -97,7 +97,7 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
         mTotalMessagesDecoded++;
         EDACSMessageType type = edacs.getMessageType();
 
-        mLog.info("EDACS RX: {}", edacs);
+        mLog.debug("EDACS RX: {}", edacs);
 
         switch(type)
         {
@@ -144,7 +144,7 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
         long freq = edacsChannel.getDownlinkFrequency();
         String freqStr = freq > 0 ? String.format("%.4f MHz", freq / 1e6) : "unknown freq";
 
-        mLog.info("EDACS {} {} TG:0x{} Src:0x{} LCN:{} ({})", mode, callType,
+        mLog.debug("EDACS {} {} TG:0x{} Src:0x{} LCN:{} ({})", mode, callType,
                 Integer.toHexString(message.getGroup()),
                 Integer.toHexString(message.getSource()),
                 lcn, freqStr);
@@ -203,7 +203,7 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
     {
         if(mTotalMessagesDecoded > 0 && mTotalMessagesDecoded % STATS_LOG_INTERVAL == 0)
         {
-            mLog.info("EDACS stats: messages={} BCH_errors={} sys=0x{} site={} area={} ccLcn={}",
+            mLog.debug("EDACS stats: messages={} BCH_errors={} sys=0x{} site={} area={} ccLcn={}",
                     mTotalMessagesDecoded, mBchErrors,
                     Integer.toHexString(mSystemId), mSiteId, mAreaCode, mCcLcn);
         }
