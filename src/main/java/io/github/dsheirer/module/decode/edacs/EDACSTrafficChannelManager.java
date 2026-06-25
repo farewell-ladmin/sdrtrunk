@@ -19,6 +19,7 @@ import io.github.dsheirer.module.decode.traffic.TrafficChannelManager;
 import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.source.config.SourceConfigTuner;
+import io.github.dsheirer.util.ThreadPool;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -28,8 +29,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Traffic channel manager for EDACS. Maintains a pool of reusable traffic
@@ -49,6 +53,8 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
 
     public static final String CHANNEL_START_REJECTED = "CHANNEL START REJECTED";
     public static final String MAX_TRAFFIC_CHANNELS_EXCEEDED = "MAX TRAFFIC CHANNELS EXCEEDED";
+    private static final long CALL_STALE_MS = 3000;
+    private static final long CALL_TEARDOWN_MS = 5000;
 
     private final int mTrafficChannelPoolSize;
     private DecodeConfigEDACS mDecodeConfig;
@@ -57,7 +63,11 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     private List<Channel> mManagedTrafficChannels;
     private Map<EDACSChannel, Channel> mAllocatedTrafficChannelMap = new ConcurrentHashMap<>();
     private Map<EDACSChannel, DecodeEvent> mChannelGrantEventMap = new ConcurrentHashMap<>();
+    private Map<EDACSChannel, Long> mLastGrantTimestampMap = new ConcurrentHashMap<>();
+    private Set<EDACSChannel> mStaleCallSet = ConcurrentHashMap.newKeySet();
+    private Set<EDACSChannel> mPendingTeardownSet = ConcurrentHashMap.newKeySet();
     private final TrafficChannelTeardownMonitor mTrafficChannelTeardownMonitor = new TrafficChannelTeardownMonitor();
+    private ScheduledFuture<?> mStaleCallMonitorFuture;
     private Listener<ChannelEvent> mChannelEventListener;
     private Listener<IDecodeEvent> mDecodeEventListener;
 
@@ -99,6 +109,9 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             if(isSameTalkgroup(identifierCollection, existingEvent.getIdentifierCollection()))
             {
                 // Same talkgroup on same LCN - this is a call update, not a new call.
+                mLastGrantTimestampMap.put(edacsChannel, message.getTimestamp());
+                mStaleCallSet.remove(edacsChannel);
+                mPendingTeardownSet.remove(edacsChannel);
                 existingEvent.update(message.getTimestamp());
                 broadcast(existingEvent);
                 return;
@@ -109,7 +122,9 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                 if(mAllocatedTrafficChannelMap.containsKey(edacsChannel))
                 {
                     Channel previousTrafficChannel = mAllocatedTrafficChannelMap.get(edacsChannel);
+                    mPendingTeardownSet.add(edacsChannel);
                     broadcast(new ChannelEvent(previousTrafficChannel, ChannelEvent.Event.REQUEST_DISABLE));
+                    return;
                 }
             }
         }
@@ -122,12 +137,16 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                 .build();
 
         mChannelGrantEventMap.put(edacsChannel, grantEvent);
+        mLastGrantTimestampMap.put(edacsChannel, message.getTimestamp());
+        mStaleCallSet.remove(edacsChannel);
+        mPendingTeardownSet.remove(edacsChannel);
 
         if(edacsChannel.getDownlinkFrequency() == 0)
         {
             grantEvent.setDetails("Invalid Channel Map - No Frequency For LCN " +
                     edacsChannel.getChannelNumber());
             broadcast(grantEvent);
+            clearChannelState(edacsChannel);
             return;
         }
 
@@ -137,6 +156,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
         {
             grantEvent.setDetails(MAX_TRAFFIC_CHANNELS_EXCEEDED);
             broadcast(grantEvent);
+            clearChannelState(edacsChannel);
             return;
         }
 
@@ -244,16 +264,30 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     @Override
     public void reset()
     {
+        mLastGrantTimestampMap.clear();
+        mStaleCallSet.clear();
+        mPendingTeardownSet.clear();
     }
 
     @Override
     public void start()
     {
+        if(mStaleCallMonitorFuture == null || mStaleCallMonitorFuture.isCancelled())
+        {
+            mStaleCallMonitorFuture = ThreadPool.SCHEDULED.scheduleAtFixedRate(this::checkStaleCalls,
+                    1, 1, TimeUnit.SECONDS);
+        }
     }
 
     @Override
     public void stop()
     {
+        if(mStaleCallMonitorFuture != null)
+        {
+            mStaleCallMonitorFuture.cancel(true);
+            mStaleCallMonitorFuture = null;
+        }
+
         mAvailableTrafficChannelQueue.clear();
         List<Channel> channels = new ArrayList<>(mAllocatedTrafficChannelMap.values());
 
@@ -262,6 +296,48 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             mLog.debug("Stopping EDACS traffic channel: " + channel);
             broadcast(new ChannelEvent(channel, ChannelEvent.Event.REQUEST_DISABLE));
         }
+    }
+
+    private void checkStaleCalls()
+    {
+        long now = System.currentTimeMillis();
+
+        for(Map.Entry<EDACSChannel, Long> entry : mLastGrantTimestampMap.entrySet())
+        {
+            EDACSChannel edacsChannel = entry.getKey();
+            long lastGrantTimestamp = entry.getValue();
+            long age = now - lastGrantTimestamp;
+
+            if(age >= CALL_STALE_MS && mStaleCallSet.add(edacsChannel))
+            {
+                DecodeEvent event = mChannelGrantEventMap.get(edacsChannel);
+
+                if(event != null)
+                {
+                    event.end(lastGrantTimestamp);
+                    broadcast(event);
+                }
+            }
+
+            if(age >= CALL_TEARDOWN_MS && mPendingTeardownSet.add(edacsChannel))
+            {
+                Channel trafficChannel = mAllocatedTrafficChannelMap.get(edacsChannel);
+
+                if(trafficChannel != null)
+                {
+                    broadcast(new ChannelEvent(trafficChannel, ChannelEvent.Event.REQUEST_DISABLE));
+                }
+            }
+        }
+    }
+
+    private void clearChannelState(EDACSChannel edacsChannel)
+    {
+        mAllocatedTrafficChannelMap.remove(edacsChannel);
+        mChannelGrantEventMap.remove(edacsChannel);
+        mLastGrantTimestampMap.remove(edacsChannel);
+        mStaleCallSet.remove(edacsChannel);
+        mPendingTeardownSet.remove(edacsChannel);
     }
 
     private boolean isSameTalkgroup(IdentifierCollection collection1, IdentifierCollection collection2)
@@ -316,6 +392,9 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                         if(toRemove != null)
                         {
                             mAllocatedTrafficChannelMap.remove(toRemove);
+                            mLastGrantTimestampMap.remove(toRemove);
+                            mStaleCallSet.remove(toRemove);
+                            mPendingTeardownSet.remove(toRemove);
                             mAvailableTrafficChannelQueue.add(channel);
 
                             DecodeEvent event = mChannelGrantEventMap.remove(toRemove);
@@ -333,6 +412,9 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                         if(rejected != null)
                         {
                             mAllocatedTrafficChannelMap.remove(rejected);
+                            mLastGrantTimestampMap.remove(rejected);
+                            mStaleCallSet.remove(rejected);
+                            mPendingTeardownSet.remove(rejected);
                             mAvailableTrafficChannelQueue.add(channel);
 
                             DecodeEvent event = mChannelGrantEventMap.remove(rejected);
