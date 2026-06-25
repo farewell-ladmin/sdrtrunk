@@ -211,6 +211,9 @@ public class EDACSMessageFactory
     {
         int group = msg_1 & 0xFFFF;
         int source = msg_2 & 0xFFFFF;
+        // Validation: a real login has a non-zero group. Source can
+        // legitimately be 0 for some logins, but group=0 is not
+        // valid. Reject group=0 to filter out BCH-corrected noise.
         if(group == 0)
         {
             message.setMessageType(EDACSMessageType.UNKNOWN);
@@ -268,6 +271,15 @@ public class EDACSMessageFactory
                 int isTxTrunking = (msg_2 & 0x200000) >> 21;
                 int isEmergency = (msg_2 & 0x100000) >> 20;
                 int source = msg_2 & 0xFFFFF;
+                // Validation: a real call grant has a non-zero LCN (1-25)
+                // and a non-zero talkgroup. BCH-corrected noise frequently
+                // produces LCN=0 or group=0; reject those to keep them
+                // from triggering traffic channel allocation.
+                if(lcn == 0 || lcn > 25 || group == 0)
+                {
+                    message.setMessageType(EDACSMessageType.UNKNOWN);
+                    return;
+                }
                 message.setMessageType(isDigital != 0 ? EDACSMessageType.DIGITAL_GROUP_CALL :
                         EDACSMessageType.ANALOG_GROUP_CALL);
                 message.setLCN(lcn);
@@ -338,6 +350,12 @@ public class EDACSMessageFactory
                 int isDigital = (msg_1 & 0x10000) >> 16;
                 int isUpdate = (msg_1 & 0x8000) >> 15;
                 int source = msg_2 & 0xFFFFF;
+                // Validation: a real all-call has a non-zero LCN.
+                if(lcn == 0 || lcn > 25)
+                {
+                    message.setMessageType(EDACSMessageType.UNKNOWN);
+                    return;
+                }
                 message.setMessageType(EDACSMessageType.ALL_CALL);
                 message.setLCN(lcn);
                 message.setGroup(0); // System all-call: TG=0
