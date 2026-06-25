@@ -5,7 +5,6 @@ import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.audio.codec.mbe.JmbeAudioModule;
 import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
-import io.github.dsheirer.dsp.gain.NonClippingGain;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.module.decode.edacs.message.EDACSProVoiceMessage;
 import io.github.dsheirer.preference.UserPreferences;
@@ -25,7 +24,6 @@ public class EDACSProVoiceAudioModule extends JmbeAudioModule
     private final static Logger mLog = LoggerFactory.getLogger(EDACSProVoiceAudioModule.class);
     private static final String PROVOICE_CODEC = "PROVOICE";
 
-    private final NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
     private final SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private int mFramesProcessed = 0;
     private int mDecodeErrors = 0;
@@ -69,7 +67,6 @@ public class EDACSProVoiceAudioModule extends JmbeAudioModule
                 try
                 {
                     float[] audio = getAudioCodec().getAudio(frame);
-                    audio = mGain.apply(audio);
                     addAudio(audio);
                     mFramesProcessed++;
                 }
