@@ -26,6 +26,12 @@ public class EDACSSyncDetector
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSSyncDetector.class);
 
+    /** EDACS control channels are resampled to 48 kHz, or 5 samples/symbol. */
+    private static final int PHASE_CANDIDATES = 5;
+
+    /** Reacquire only after the current phase has been silent for this long. */
+    private static final long PHASE_STALE_SAMPLES = 48000L * 20L;
+
     /** AFC exponential moving average alpha. Slow enough to avoid tracking symbol data. */
     private static final double AFC_ALPHA = 0.001;
 
@@ -33,10 +39,16 @@ public class EDACSSyncDetector
     private static final float AFC_MAX = 2.0f;
 
     private final EDACSFrameProcessor mFrameProcessor = new EDACSFrameProcessor();
+    private final EDACSFrameProcessor[] mPhaseFrameProcessors = new EDACSFrameProcessor[PHASE_CANDIDATES];
     private Listener<IMessage> mMessageListener;
 
     private double mSamplesPerSymbol = 2.5;
     private double mSampleAccum = 0;
+    private long mSampleIndex = 0;
+    private boolean mPhaseScanMode = false;
+    private int mActivePhase = 0;
+    private long mLastActiveDecodeSampleIndex = 0;
+    private boolean mRecoveryMode = false;
     private float mLastSample = 0f;
     private float mLastDeviation = 0f;
     private double mAfc = 0.0;
@@ -47,6 +59,19 @@ public class EDACSSyncDetector
     {
         mSamplesPerSymbol = sampleRate / 9600.0;
         mSampleAccum = mSamplesPerSymbol / 2.0;
+        mSampleIndex = 0;
+        mActivePhase = (int)Math.floor(mSamplesPerSymbol / 2.0);
+        mLastActiveDecodeSampleIndex = 0;
+        mRecoveryMode = false;
+        mPhaseScanMode = Math.abs(mSamplesPerSymbol - PHASE_CANDIDATES) < 0.01;
+
+        if(mPhaseScanMode)
+        {
+            for(int x = 0; x < mPhaseFrameProcessors.length; x++)
+            {
+                mPhaseFrameProcessors[x] = new EDACSFrameProcessor();
+            }
+        }
     }
 
     public void process(float[] demodulated, Listener<IMessage> messageListener)
@@ -65,26 +90,79 @@ public class EDACSSyncDetector
             float dev = sample - (float)mAfc;
             mLastSample = sample;
             mLastDeviation = dev;
-            mSampleAccum += 1.0;
-
-            if(mSampleAccum < mSamplesPerSymbol)
-            {
-                continue;
-            }
-            mSampleAccum -= mSamplesPerSymbol;
-
-            // DSD-FME single-sample-at-symbol-center bit detection. This
-            // avoids mixing adjacent symbols at the 9600 baud transitions.
             int bit = mLastDeviation >= 0 ? 0 : 1;
-            mFrameProcessor.processBit(bit, messageListener);
+
+            if(mPhaseScanMode)
+            {
+                int phase = (int)(mSampleIndex % PHASE_CANDIDATES);
+
+                if(phase == mActivePhase)
+                {
+                    mPhaseFrameProcessors[phase].processBit(bit, message ->
+                    {
+                        mLastActiveDecodeSampleIndex = mSampleIndex;
+
+                        if(mRecoveryMode)
+                        {
+                            mRecoveryMode = false;
+                            mLog.info("EDACS control channel recovered on phase " + mActivePhase);
+                        }
+
+                        if(messageListener != null)
+                        {
+                            messageListener.receive(message);
+                        }
+                    });
+                }
+                else if(isActivePhaseStale())
+                {
+                    if(!mRecoveryMode)
+                    {
+                        resetRecoveryPhases();
+                        mRecoveryMode = true;
+                        mLog.info("EDACS control channel phase " + mActivePhase +
+                                " stale; scanning alternate symbol phases");
+                    }
+
+                    mPhaseFrameProcessors[phase].processBit(bit, message ->
+                    {
+                        mActivePhase = phase;
+                        mLastActiveDecodeSampleIndex = mSampleIndex;
+                        mRecoveryMode = false;
+                        mLog.info("EDACS control channel reacquired on phase " + phase);
+
+                        if(messageListener != null)
+                        {
+                            messageListener.receive(message);
+                        }
+                    });
+                }
+
+                mSampleIndex++;
+            }
+            else
+            {
+                mSampleAccum += 1.0;
+
+                if(mSampleAccum < mSamplesPerSymbol)
+                {
+                    continue;
+                }
+                mSampleAccum -= mSamplesPerSymbol;
+
+                // DSD-FME single-sample-at-symbol-center bit detection. This
+                // avoids mixing adjacent symbols at the 9600 baud transitions.
+                mFrameProcessor.processBit(bit, messageListener);
+            }
 
             if(System.currentTimeMillis() - mLastStatsTime > 10000)
             {
                 mLog.debug("EDACS Demod - afc: " + String.format("%.4f", mAfc) +
                         " sps: " + String.format("%.2f", mSamplesPerSymbol) +
-                        " frames: " + mFrameProcessor.getFramesDecoded() +
-                        " bch_pass: " + mFrameProcessor.getBchPasses() +
-                        " bch_fail: " + mFrameProcessor.getBchFails());
+                        " frames: " + getFrameProcessor().getFramesDecoded() +
+                        " bch_pass: " + getFrameProcessor().getBchPasses() +
+                        " bch_fail: " + getFrameProcessor().getBchFails() +
+                        " phase: " + mActivePhase);
                 mLastStatsTime = System.currentTimeMillis();
             }
         }
@@ -92,7 +170,28 @@ public class EDACSSyncDetector
 
     public EDACSFrameProcessor getFrameProcessor()
     {
+        if(mPhaseScanMode)
+        {
+            return mPhaseFrameProcessors[mActivePhase];
+        }
+
         return mFrameProcessor;
+    }
+
+    private boolean isActivePhaseStale()
+    {
+        return mLastActiveDecodeSampleIndex > 0 && mSampleIndex - mLastActiveDecodeSampleIndex > PHASE_STALE_SAMPLES;
+    }
+
+    private void resetRecoveryPhases()
+    {
+        for(int x = 0; x < mPhaseFrameProcessors.length; x++)
+        {
+            if(x != mActivePhase)
+            {
+                mPhaseFrameProcessors[x] = new EDACSFrameProcessor();
+            }
+        }
     }
 
     /**
@@ -101,6 +200,6 @@ public class EDACSSyncDetector
      */
     public boolean hasSync()
     {
-        return mFrameProcessor.getFramesDecoded() > 0;
+        return getFrameProcessor().getFramesDecoded() > 0;
     }
 }
