@@ -125,6 +125,28 @@ public class EDACSProVoiceInterleave
             grid[pW[i]][pX[i]] = wireBits[i] ? 1 : 0;
         }
 
+        return toImbeFrame(grid);
+    }
+
+    /**
+     * Converts a DSD-FME/mbelib-style 7x24 IMBE 7100 bit grid into the
+     * 18-byte interleaved frame representation expected by JMBE.
+     */
+    public static byte[] toImbeFrame(int[][] grid)
+    {
+        if(grid.length != 7)
+        {
+            throw new IllegalArgumentException("IMBE grid requires 7 rows");
+        }
+
+        for(int row = 0; row < 7; row++)
+        {
+            if(grid[row].length != 24)
+            {
+                throw new IllegalArgumentException("IMBE grid row " + row + " requires 24 columns");
+            }
+        }
+
         // Build the 144-bit codec input. For each i, position
         // DEINTERLEAVE[i] in the 7x24 grid contains the bit the codec
         // expects at input position i. The 2 grid cells at positions

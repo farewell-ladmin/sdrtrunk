@@ -102,6 +102,12 @@ public class EDACSChannel implements IChannelDescriptor
     }
 
     @Override
+    public String toString()
+    {
+        return String.valueOf(mChannelNumber);
+    }
+
+    @Override
     public int hashCode()
     {
         return Integer.hashCode(mChannelNumber);

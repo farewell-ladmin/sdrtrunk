@@ -226,24 +226,26 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
     {
         mFramesDetected++;
 
-        // The 24-bit dotting is at the end of the 792-bit window.
-        // Read the 4 IMBE frames at their offsets within the frame.
-        boolean[] fr1 = readImbeBits(192, IMBE_BITS_PER_FRAME);
-        boolean[] fr2 = readImbeBits(192 + IMBE_BITS_PER_FRAME + SPACER_BITS, IMBE_BITS_PER_FRAME);
-        boolean[] fr3 = readImbeBits(192 + IMBE_BITS_PER_FRAME * 2 + SPACER_BITS * 2, IMBE_BITS_PER_FRAME);
-        boolean[] fr4 = readImbeBits(192 + IMBE_BITS_PER_FRAME * 3 + SPACER_BITS * 3, IMBE_BITS_PER_FRAME);
-
-        if(fr1 == null || fr2 == null || fr3 == null || fr4 == null)
+        if(mFrameBitCount < FRAME_BITS)
         {
             mDecodeErrors++;
             return;
         }
 
         int lid = readLid();
-        byte[] imbe1 = EDACSProVoiceInterleave.toImbeFrame(fr1);
-        byte[] imbe2 = EDACSProVoiceInterleave.toImbeFrame(fr2);
-        byte[] imbe3 = EDACSProVoiceInterleave.toImbeFrame(fr3);
-        byte[] imbe4 = EDACSProVoiceInterleave.toImbeFrame(fr4);
+        int[] offset = new int[] { DOTTING_BITS + SYNC_BITS + HEADER_BITS };
+        int[][] grid1 = new int[7][24];
+        int[][] grid2 = new int[7][24];
+        fillImbePair(offset, grid1, grid2);
+        offset[0] += BF_BITS;
+        int[][] grid3 = new int[7][24];
+        int[][] grid4 = new int[7][24];
+        fillImbePair(offset, grid3, grid4);
+
+        byte[] imbe1 = EDACSProVoiceInterleave.toImbeFrame(grid1);
+        byte[] imbe2 = EDACSProVoiceInterleave.toImbeFrame(grid2);
+        byte[] imbe3 = EDACSProVoiceInterleave.toImbeFrame(grid3);
+        byte[] imbe4 = EDACSProVoiceInterleave.toImbeFrame(grid4);
 
         EDACSProVoiceMessage message = new EDACSProVoiceMessage(imbe1, imbe2, imbe3, imbe4, lid, System.currentTimeMillis());
         mFramesDecoded++;
@@ -251,6 +253,69 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
         {
             messageListener.receive(message);
         }
+    }
+
+    /**
+     * Fills two IMBE frames from the ProVoice paired interleave layout.
+     * This mirrors DSD-FME processProVoice() using the pW/pX grid tables.
+     */
+    private void fillImbePair(int[] bitOffset, int[][] frame1, int[][] frame2)
+    {
+        int tableOffset = 0;
+
+        for(int i = 0; i < 11; i++)
+        {
+            fillBothFrames(bitOffset, frame1, frame2, tableOffset, 6);
+            tableOffset += 6;
+        }
+
+        fillFrame(bitOffset, frame1, tableOffset, 6);
+        fillFrame(bitOffset, frame2, tableOffset, 4);
+        tableOffset += 4;
+
+        bitOffset[0] += SPACER_BITS;
+
+        fillFrame(bitOffset, frame2, tableOffset, 2);
+        tableOffset += 2;
+
+        for(int i = 0; i < 3; i++)
+        {
+            fillBothFrames(bitOffset, frame1, frame2, tableOffset, 6);
+            tableOffset += 6;
+        }
+
+        fillBothFrames(bitOffset, frame1, frame2, tableOffset, 5);
+        tableOffset += 5;
+
+        for(int i = 0; i < 7; i++)
+        {
+            fillBothFrames(bitOffset, frame1, frame2, tableOffset, 6);
+            tableOffset += 6;
+        }
+
+        fillBothFrames(bitOffset, frame1, frame2, tableOffset, 5);
+        bitOffset[0] += SPACER_BITS;
+    }
+
+    private void fillBothFrames(int[] bitOffset, int[][] frame1, int[][] frame2, int tableOffset, int count)
+    {
+        fillFrame(bitOffset, frame1, tableOffset, count);
+        fillFrame(bitOffset, frame2, tableOffset, count);
+    }
+
+    private void fillFrame(int[] bitOffset, int[][] frame, int tableOffset, int count)
+    {
+        for(int i = 0; i < count; i++)
+        {
+            int index = tableOffset + i;
+            frame[EDACSProVoiceInterleave.pW[index]][EDACSProVoiceInterleave.pX[index]] = readFrameBit(bitOffset[0]++) ? 1 : 0;
+        }
+    }
+
+    private boolean readFrameBit(int bitOffset)
+    {
+        int startIndex = (mFrameBitCount - FRAME_BITS) % mFrameBits.length;
+        return mFrameBits[(startIndex + bitOffset) % mFrameBits.length];
     }
 
     /**
