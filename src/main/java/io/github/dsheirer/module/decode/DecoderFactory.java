@@ -64,6 +64,9 @@ import io.github.dsheirer.module.decode.lj1200.LJ1200MessageFilter;
 import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoder;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoderState;
+import io.github.dsheirer.module.decode.edacs.EDACSMessageFilter;
+import io.github.dsheirer.module.decode.edacs.EDACSProVoiceAudioModule;
+import io.github.dsheirer.module.decode.edacs.EDACSProVoiceDecoder;
 import io.github.dsheirer.module.decode.edacs.EDACSTrafficChannelManager;
 import io.github.dsheirer.module.decode.moto.BandplanType;
 import io.github.dsheirer.module.decode.moto.DecodeConfigMotorolaTypeII;
@@ -204,7 +207,8 @@ public class DecoderFactory
                 processP25Phase2(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
                 break;
             case EDACS:
-                processEDACS(userPreferences, channel, modules, aliasList, decodeConfig);
+                processEDACS(userPreferences, channel, modules, aliasList, decodeConfig, trafficChannelManager,
+                    channelDescriptor);
                 break;
             case MOTOROLA_TYPE_II:
                 processMotorolaTypeII(channel, userPreferences, modules, aliasList,
@@ -486,7 +490,10 @@ public class DecoderFactory
      * @param aliasList for the channel
      * @param decodeConfig for the channel
      */
-    private static void processEDACS(UserPreferences userPreferences, Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
+    private static void processEDACS(UserPreferences userPreferences, Channel channel, List<Module> modules,
+                                     AliasList aliasList, DecodeConfiguration decodeConfig,
+                                     TrafficChannelManager trafficChannelManager,
+                                     IChannelDescriptor channelDescriptor) {
         if(channel.isTrafficChannel())
         {
             boolean proVoice = false;
@@ -496,10 +503,13 @@ public class DecoderFactory
             }
             if(proVoice)
             {
-                // Digital traffic channel: ProVoice frame sync + IMBE 7100
-                // audio via JMBE.
-                modules.add(new io.github.dsheirer.module.decode.edacs.EDACSProVoiceDecoder());
-                modules.add(new io.github.dsheirer.module.decode.edacs.EDACSProVoiceAudioModule(userPreferences, aliasList));
+                // Digital traffic channel: ProVoice frame sync + IMBE 7100 audio via JMBE.
+                modules.add(new EDACSProVoiceDecoder());
+                EDACSDecoderState decoderState = new EDACSDecoderState(channel,
+                    trafficChannelManager instanceof EDACSTrafficChannelManager edacs ? edacs : null);
+                decoderState.setCurrentChannel(channelDescriptor);
+                modules.add(decoderState);
+                modules.add(new EDACSProVoiceAudioModule(userPreferences, aliasList));
             }
             else
             {
@@ -737,6 +747,9 @@ public class DecoderFactory
                 break;
             case DMR:
                 filters.add(new DmrMessageFilterSet());
+                break;
+            case EDACS:
+                filters.add(new EDACSMessageFilter());
                 break;
             case FLEETSYNC2:
                 filters.add(new FleetsyncMessageFilter());

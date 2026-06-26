@@ -14,8 +14,10 @@ import io.github.dsheirer.message.IMessageListener;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.edacs.channel.EDACSChannel;
 import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
+import io.github.dsheirer.module.decode.edacs.message.EDACSProVoiceMessage;
 import io.github.dsheirer.module.decode.event.DecodeEvent;
 import io.github.dsheirer.module.decode.event.DecodeEventType;
+import io.github.dsheirer.protocol.Protocol;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +40,7 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
 
     private int mTotalMessagesDecoded;
     private int mBchErrors;
+    private DecodeEvent mCurrentTrafficEvent;
 
     public EDACSDecoderState(Channel channel, EDACSTrafficChannelManager trafficChannelManager)
     {
@@ -81,6 +84,12 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
     @Override
     public void receive(IMessage message)
     {
+        if(message instanceof EDACSProVoiceMessage proVoice)
+        {
+            processProVoiceTraffic(proVoice);
+            return;
+        }
+
         if(!(message instanceof EDACSMessage edacs))
         {
             return;
@@ -156,6 +165,35 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
 
         // Control channel stays in CONTROL state - CALL is for traffic channels only
         broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
+    }
+
+    private void processProVoiceTraffic(EDACSProVoiceMessage message)
+    {
+        mTotalMessagesDecoded++;
+
+        if(mChannelType != ChannelType.TRAFFIC || !message.isValid())
+        {
+            logStatsIfDue();
+            return;
+        }
+
+        if(mCurrentTrafficEvent == null)
+        {
+            mCurrentTrafficEvent = DecodeEvent.builder(DecodeEventType.CALL, message.getTimestamp())
+                    .channel(getCurrentChannel())
+                    .details("ProVoice Traffic")
+                    .identifiers(getIdentifierCollection())
+                    .protocol(Protocol.EDACS)
+                    .build();
+        }
+        else
+        {
+            mCurrentTrafficEvent.update(message.getTimestamp());
+        }
+
+        broadcast(mCurrentTrafficEvent);
+        broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
+        logStatsIfDue();
     }
 
     private void processSystemInfo(EDACSMessage message)
@@ -255,8 +293,22 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
         }
     }
 
+    @Override
+    public void stop()
+    {
+        if(mCurrentTrafficEvent != null)
+        {
+            mCurrentTrafficEvent.end(System.currentTimeMillis());
+            broadcast(mCurrentTrafficEvent);
+            mCurrentTrafficEvent = null;
+        }
+
+        super.stop();
+    }
+
     protected void resetState()
     {
         super.resetState();
+        mCurrentTrafficEvent = null;
     }
 }

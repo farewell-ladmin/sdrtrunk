@@ -4,6 +4,7 @@ import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.protocol.Protocol;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 
@@ -20,10 +21,19 @@ public class EDACSProVoiceMessage implements IMessage
     private final int mBfMarker;
     private final String mSyncPattern;
     private final long mTimestamp;
+    private final List<Identifier> mIdentifiers;
 
     public EDACSProVoiceMessage(byte[] imbeFrame1, byte[] imbeFrame2, byte[] imbeFrame3, byte[] imbeFrame4,
                                 int[][][] imbeGrids, boolean[] frameBits, int lid, int bfMarker,
                                 String syncPattern, long timestamp)
+    {
+        this(imbeFrame1, imbeFrame2, imbeFrame3, imbeFrame4, imbeGrids, frameBits, lid, bfMarker, syncPattern,
+                timestamp, Collections.emptyList());
+    }
+
+    public EDACSProVoiceMessage(byte[] imbeFrame1, byte[] imbeFrame2, byte[] imbeFrame3, byte[] imbeFrame4,
+                                int[][][] imbeGrids, boolean[] frameBits, int lid, int bfMarker,
+                                String syncPattern, long timestamp, List<Identifier> identifiers)
     {
         mImbeFrames[0] = imbeFrame1;
         mImbeFrames[1] = imbeFrame2;
@@ -35,6 +45,8 @@ public class EDACSProVoiceMessage implements IMessage
         mBfMarker = bfMarker;
         mSyncPattern = syncPattern;
         mTimestamp = timestamp;
+        mIdentifiers = identifiers != null ? Collections.unmodifiableList(new ArrayList<>(identifiers)) :
+                Collections.emptyList();
     }
 
     public byte[][] getImbeFrames()
@@ -140,6 +152,6 @@ public class EDACSProVoiceMessage implements IMessage
     @Override
     public List<Identifier> getIdentifiers()
     {
-        return Collections.emptyList();
+        return mIdentifiers;
     }
 }

@@ -11,9 +11,12 @@ import io.github.dsheirer.dsp.filter.decimate.IRealDecimationFilter;
 import io.github.dsheirer.dsp.filter.fir.real.IRealFilter;
 import io.github.dsheirer.dsp.fm.FmDemodulatorFactory;
 import io.github.dsheirer.dsp.fm.IDemodulator;
+import io.github.dsheirer.identifier.IdentifierUpdateListener;
+import io.github.dsheirer.identifier.IdentifierUpdateNotification;
+import io.github.dsheirer.identifier.MutableIdentifierCollection;
 import io.github.dsheirer.message.IMessage;
-import io.github.dsheirer.message.IMessageProvider;
-import io.github.dsheirer.module.Module;
+import io.github.dsheirer.module.decode.Decoder;
+import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.edacs.message.EDACSProVoiceMessage;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.sample.complex.ComplexSamples;
@@ -49,8 +52,8 @@ import org.slf4j.LoggerFactory;
  * bits over the air. The decoder frames from sync, so the internal frame omits
  * the 24 dotting bits and is 772 bits.</p>
  */
-public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListener, Listener<ComplexSamples>,
-        ISourceEventListener, IMessageProvider
+public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesListener, Listener<ComplexSamples>,
+        ISourceEventListener, IdentifierUpdateListener
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSProVoiceDecoder.class);
 
@@ -102,8 +105,15 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
     private float[] mResampleBuffer = new float[0];
     private double mResamplePhase = 0;
     private boolean mResampleReady = false;
-    private Listener<IMessage> mMessageListener;
     private final SourceEventProcessor mSourceEventProcessor = new SourceEventProcessor();
+    private final MutableIdentifierCollection mIdentifierCollection = new MutableIdentifierCollection();
+    private final IdentifierUpdateProcessor mIdentifierUpdateProcessor = new IdentifierUpdateProcessor();
+
+    @Override
+    public DecoderType getDecoderType()
+    {
+        return DecoderType.EDACS;
+    }
 
     @Override
     public Listener<ComplexSamples> getComplexSamplesListener()
@@ -118,15 +128,9 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
     }
 
     @Override
-    public void setMessageListener(Listener<IMessage> listener)
+    public Listener<IdentifierUpdateNotification> getIdentifierUpdateListener()
     {
-        mMessageListener = listener;
-    }
-
-    @Override
-    public void removeMessageListener()
-    {
-        mMessageListener = null;
+        return mIdentifierUpdateProcessor;
     }
 
     @Override
@@ -142,7 +146,7 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
         float[] filteredI = mIBasebandFilter.filter(decimatedI);
         float[] filteredQ = mQBasebandFilter.filter(decimatedQ);
         float[] demodulated = mFMDemodulator.demodulate(filteredI, filteredQ);
-        process(resample(demodulated, mDecimatedRate, 48000.0), mMessageListener);
+        process(resample(demodulated, mDecimatedRate, 48000.0), getMessageListener());
     }
 
     public void setSampleRate(double sampleRate)
@@ -255,7 +259,7 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
 
         EDACSProVoiceMessage message = new EDACSProVoiceMessage(imbe1, imbe2, imbe3, imbe4,
                 new int[][][] { grid1, grid2, grid3, grid4 }, frameBits, lid, bfMarker, syncPattern,
-                System.currentTimeMillis());
+                System.currentTimeMillis(), mIdentifierCollection.getIdentifiers());
         mFramesDecoded++;
         if(messageListener != null)
         {
@@ -498,18 +502,12 @@ public class EDACSProVoiceDecoder extends Module implements IComplexSamplesListe
         }
     }
 
-    @Override
-    public void reset()
+    private class IdentifierUpdateProcessor implements Listener<IdentifierUpdateNotification>
     {
-    }
-
-    @Override
-    public void start()
-    {
-    }
-
-    @Override
-    public void stop()
-    {
+        @Override
+        public void receive(IdentifierUpdateNotification notification)
+        {
+            mIdentifierCollection.receive(notification);
+        }
     }
 }
