@@ -61,11 +61,13 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     private DecodeConfigEDACS mDecodeConfig;
 
     private Queue<Channel> mAvailableTrafficChannelQueue = new ConcurrentLinkedQueue<>();
+    private Set<Channel> mAvailableTrafficChannelSet = ConcurrentHashMap.newKeySet();
     private List<Channel> mManagedTrafficChannels;
     private Map<EDACSChannel, Channel> mAllocatedTrafficChannelMap = new ConcurrentHashMap<>();
     private Map<EDACSChannel, DecodeEvent> mChannelGrantEventMap = new ConcurrentHashMap<>();
     private Map<EDACSChannel, Long> mLastGrantTimestampMap = new ConcurrentHashMap<>();
     private Map<EDACSChannel, Long> mLastGrantBroadcastTimestampMap = new ConcurrentHashMap<>();
+    private Map<EDACSChannel, PendingChannelGrant> mPendingChannelGrantMap = new ConcurrentHashMap<>();
     private Set<EDACSChannel> mStaleCallSet = ConcurrentHashMap.newKeySet();
     private Set<EDACSChannel> mPendingTeardownSet = ConcurrentHashMap.newKeySet();
     private final TrafficChannelTeardownMonitor mTrafficChannelTeardownMonitor = new TrafficChannelTeardownMonitor();
@@ -96,7 +98,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
      *        FROM (source radio) identifiers
      * @param edacsChannel the LCN-to-frequency channel descriptor
      */
-    public void processChannelGrant(EDACSMessage message, IdentifierCollection identifierCollection,
+    public synchronized void processChannelGrant(EDACSMessage message, IdentifierCollection identifierCollection,
                                      EDACSChannel edacsChannel)
     {
         if(edacsChannel == null || identifierCollection == null)
@@ -124,6 +126,8 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                 if(mAllocatedTrafficChannelMap.containsKey(edacsChannel))
                 {
                     Channel previousTrafficChannel = mAllocatedTrafficChannelMap.get(edacsChannel);
+                    mPendingChannelGrantMap.put(edacsChannel,
+                        new PendingChannelGrant(message, identifierCollection, edacsChannel));
                     mPendingTeardownSet.add(edacsChannel);
                     broadcast(new ChannelEvent(previousTrafficChannel, ChannelEvent.Event.REQUEST_DISABLE));
                     return;
@@ -153,7 +157,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             return;
         }
 
-        Channel trafficChannel = mAvailableTrafficChannelQueue.poll();
+        Channel trafficChannel = pollAvailableTrafficChannel();
 
         if(trafficChannel == null)
         {
@@ -208,8 +212,36 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             trafficChannelList.add(trafficChannel);
         }
 
-        mAvailableTrafficChannelQueue.addAll(trafficChannelList);
+        for(Channel trafficChannel: trafficChannelList)
+        {
+            offerAvailableTrafficChannel(trafficChannel);
+        }
+
         mManagedTrafficChannels = Collections.unmodifiableList(trafficChannelList);
+    }
+
+    private Channel pollAvailableTrafficChannel()
+    {
+        Channel channel = mAvailableTrafficChannelQueue.poll();
+
+        if(channel != null)
+        {
+            mAvailableTrafficChannelSet.remove(channel);
+        }
+
+        return channel;
+    }
+
+    private void offerAvailableTrafficChannel(Channel channel)
+    {
+        if(mAvailableTrafficChannelSet.add(channel))
+        {
+            mAvailableTrafficChannelQueue.add(channel);
+        }
+        else
+        {
+            mLog.debug("Ignoring duplicate EDACS traffic channel pool return: {}", channel);
+        }
     }
 
     private DecodeConfigEDACS getTrafficDecodeConfiguration(EDACSMessage message)
@@ -269,6 +301,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     {
         mLastGrantTimestampMap.clear();
         mLastGrantBroadcastTimestampMap.clear();
+        mPendingChannelGrantMap.clear();
         mStaleCallSet.clear();
         mPendingTeardownSet.clear();
     }
@@ -293,6 +326,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
         }
 
         mAvailableTrafficChannelQueue.clear();
+        mAvailableTrafficChannelSet.clear();
         List<Channel> channels = new ArrayList<>(mAllocatedTrafficChannelMap.values());
 
         for(Channel channel : channels)
@@ -352,6 +386,16 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
         mChannelGrantEventMap.remove(edacsChannel);
         mLastGrantTimestampMap.remove(edacsChannel);
         mLastGrantBroadcastTimestampMap.remove(edacsChannel);
+        mPendingChannelGrantMap.remove(edacsChannel);
+        mStaleCallSet.remove(edacsChannel);
+        mPendingTeardownSet.remove(edacsChannel);
+    }
+
+    private void clearCompletedChannelState(EDACSChannel edacsChannel)
+    {
+        mAllocatedTrafficChannelMap.remove(edacsChannel);
+        mLastGrantTimestampMap.remove(edacsChannel);
+        mLastGrantBroadcastTimestampMap.remove(edacsChannel);
         mStaleCallSet.remove(edacsChannel);
         mPendingTeardownSet.remove(edacsChannel);
     }
@@ -408,11 +452,9 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                         if(toRemove != null)
                         {
                             mAllocatedTrafficChannelMap.remove(toRemove);
-                            mLastGrantTimestampMap.remove(toRemove);
-                            mLastGrantBroadcastTimestampMap.remove(toRemove);
-                            mStaleCallSet.remove(toRemove);
-                            mPendingTeardownSet.remove(toRemove);
-                            mAvailableTrafficChannelQueue.add(channel);
+                            PendingChannelGrant pendingGrant = mPendingChannelGrantMap.remove(toRemove);
+                            clearCompletedChannelState(toRemove);
+                            offerAvailableTrafficChannel(channel);
 
                             DecodeEvent event = mChannelGrantEventMap.remove(toRemove);
 
@@ -420,6 +462,12 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                             {
                                 event.end(System.currentTimeMillis());
                                 broadcast(event);
+                            }
+
+                            if(pendingGrant != null)
+                            {
+                                processChannelGrant(pendingGrant.message(), pendingGrant.identifierCollection(),
+                                    pendingGrant.edacsChannel());
                             }
                         }
                         break;
@@ -429,11 +477,9 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                         if(rejected != null)
                         {
                             mAllocatedTrafficChannelMap.remove(rejected);
-                            mLastGrantTimestampMap.remove(rejected);
-                            mLastGrantBroadcastTimestampMap.remove(rejected);
-                            mStaleCallSet.remove(rejected);
-                            mPendingTeardownSet.remove(rejected);
-                            mAvailableTrafficChannelQueue.add(channel);
+                            PendingChannelGrant pendingGrant = mPendingChannelGrantMap.remove(rejected);
+                            clearCompletedChannelState(rejected);
+                            offerAvailableTrafficChannel(channel);
 
                             DecodeEvent event = mChannelGrantEventMap.remove(rejected);
 
@@ -448,6 +494,12 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                                     event.setDetails(CHANNEL_START_REJECTED + " - " + event.getDetails());
                                 }
                                 broadcast(event);
+                            }
+
+                            if(pendingGrant != null)
+                            {
+                                processChannelGrant(pendingGrant.message(), pendingGrant.identifierCollection(),
+                                    pendingGrant.edacsChannel());
                             }
                         }
                         break;
@@ -466,5 +518,10 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             }
             return null;
         }
+    }
+
+    private record PendingChannelGrant(EDACSMessage message, IdentifierCollection identifierCollection,
+                                       EDACSChannel edacsChannel)
+    {
     }
 }
