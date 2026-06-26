@@ -21,6 +21,7 @@ import io.github.dsheirer.module.decode.edacs.message.EDACSProVoiceMessage;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.sample.complex.ComplexSamples;
 import io.github.dsheirer.sample.complex.IComplexSamplesListener;
+import io.github.dsheirer.sample.real.IRealBufferProvider;
 import io.github.dsheirer.source.ISourceEventListener;
 import io.github.dsheirer.source.SourceEvent;
 import org.slf4j.Logger;
@@ -53,7 +54,7 @@ import org.slf4j.LoggerFactory;
  * the 24 dotting bits and is 772 bits.</p>
  */
 public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesListener, Listener<ComplexSamples>,
-        ISourceEventListener, IdentifierUpdateListener
+        ISourceEventListener, IdentifierUpdateListener, IRealBufferProvider
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSProVoiceDecoder.class);
 
@@ -108,6 +109,7 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
     private final SourceEventProcessor mSourceEventProcessor = new SourceEventProcessor();
     private final MutableIdentifierCollection mIdentifierCollection = new MutableIdentifierCollection();
     private final IdentifierUpdateProcessor mIdentifierUpdateProcessor = new IdentifierUpdateProcessor();
+    private Listener<float[]> mDemodulatedBufferListener;
 
     @Override
     public DecoderType getDecoderType()
@@ -146,7 +148,26 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
         float[] filteredI = mIBasebandFilter.filter(decimatedI);
         float[] filteredQ = mQBasebandFilter.filter(decimatedQ);
         float[] demodulated = mFMDemodulator.demodulate(filteredI, filteredQ);
-        process(resample(demodulated, mDecimatedRate, 48000.0), getMessageListener());
+        float[] resampled = resample(demodulated, mDecimatedRate, 48000.0);
+
+        if(mDemodulatedBufferListener != null)
+        {
+            mDemodulatedBufferListener.receive(resampled);
+        }
+
+        process(resampled, getMessageListener());
+    }
+
+    @Override
+    public void setBufferListener(Listener<float[]> listener)
+    {
+        mDemodulatedBufferListener = listener;
+    }
+
+    @Override
+    public void removeBufferListener()
+    {
+        mDemodulatedBufferListener = null;
     }
 
     public void setSampleRate(double sampleRate)

@@ -52,6 +52,11 @@ public class EDACSProVoiceTrafficBasebandTest
 
         for(File file : files)
         {
+            if(file.length() < MIN_BYTES)
+            {
+                continue;
+            }
+
             WavComplexData wav = readComplexWav(file);
             if(wav.payloadBytes < MIN_BYTES)
             {
