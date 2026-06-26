@@ -45,10 +45,17 @@ public class RealSamplesWaveRecorder extends Module implements IRealBufferListen
     private String mFilePrefix;
     private Path mFile;
     private AudioFormat mAudioFormat;
+    private float mGain = 1.0f;
 
     public RealSamplesWaveRecorder(float sampleRate, String filePrefix)
     {
+        this(sampleRate, filePrefix, 1.0f);
+    }
+
+    public RealSamplesWaveRecorder(float sampleRate, String filePrefix, float gain)
+    {
         mFilePrefix = filePrefix;
+        mGain = gain;
         setSampleRate(sampleRate);
     }
 
@@ -149,13 +156,28 @@ public class RealSamplesWaveRecorder extends Module implements IRealBufferListen
         {
             try
             {
-                mWriter.writeData(ConversionUtils.convertToSigned16BitSamples(samples));
+                mWriter.writeData(ConversionUtils.convertToSigned16BitSamples(applyGain(samples)));
             }
             catch(IOException ioe)
             {
                 mLog.error("IOException while writing real sample buffers to wave recorder - stopping recorder", ioe);
                 stop();
             }
+        }
+
+        private float[] applyGain(float[] samples)
+        {
+            if(mGain == 1.0f)
+            {
+                return samples;
+            }
+
+            float[] scaled = new float[samples.length];
+            for(int x = 0; x < samples.length; x++)
+            {
+                scaled[x] = samples[x] * mGain;
+            }
+            return scaled;
         }
     }
 }

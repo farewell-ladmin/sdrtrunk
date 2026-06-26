@@ -212,7 +212,7 @@ public class RecorderFactory
         sb.append("_");
         sb.append(StringUtils.replaceIllegalCharacters(channelName)).append("_demodulated");
 
-        return new RealSamplesWaveRecorder(48000.0f, sb.toString());
+        return new RealSamplesWaveRecorder(48000.0f, sb.toString(), 0.25f);
     }
 
     /**
