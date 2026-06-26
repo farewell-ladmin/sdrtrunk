@@ -90,7 +90,7 @@ public class EDACSProVoiceAudioModule extends JmbeAudioModule
                             if(abs > maxAbs) maxAbs = abs;
                             sum += s;
                         }
-                        mLog.info("PROVOICE AUDIO frame#{} samples={} maxAbs={:.6f} mean={:.6f} segAge={}ms segCloses={}",
+                        mLog.info("PROVOICE AUDIO frame#{} samples={} maxAbs={} mean={} segAgeMs={} segCloses={}",
                                 mFramesProcessed, audio.length, maxAbs, sum / audio.length,
                                 now - mSegmentOpenTime, mSegmentCloseCount);
                         mLastAudioLogTime = now;
