@@ -106,6 +106,8 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
     private double mSampleAccum = 0;
     private float mLastSample = 0f;
     private float mLastDeviation = 0f;
+    private float mDeviationPrev1 = 0f;
+    private float mDeviationPrev2 = 0f;
     private double mAfc = 0.0;
 
     private static final double AFC_ALPHA = 0.05;
@@ -223,6 +225,16 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             float dev = sample - (float)mAfc;
             mLastSample = sample;
             mLastDeviation = dev;
+            // Slice on a short trailing 3-tap average of the FM deviation rather
+            // than a single instantaneous sample. The symbol-sampling instant
+            // (the accumulator crossing) is the well-aligned phase point that
+            // sync locks to; averaging it with the two preceding samples (still
+            // inside the same 5-sample symbol) reduces per-sample noise that
+            // otherwise flips marginal bits, without the symbol-straddle that a
+            // full-window boxcar suffers from at an arbitrary window phase.
+            float smoothedDeviation = dev + mDeviationPrev1 + mDeviationPrev2;
+            mDeviationPrev2 = mDeviationPrev1;
+            mDeviationPrev1 = dev;
             mSampleAccum += 1.0;
             if(mSampleAccum < mSamplesPerSymbol)
             {
@@ -230,7 +242,7 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             }
             mSampleAccum -= mSamplesPerSymbol;
 
-            boolean bit = mLastDeviation >= 0;
+            boolean bit = smoothedDeviation >= 0;
             mFrameBits[mFrameBitCount % mFrameBits.length] = bit;
             mFrameBitCount++;
 
