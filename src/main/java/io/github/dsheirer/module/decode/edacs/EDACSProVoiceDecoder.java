@@ -80,6 +80,20 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
     private int mFramePending = 0;
     private int mFrameBitCount = 0;
 
+    /**
+     * When the matched sync is an inverted variant (INV_PROVOICE_SYNC /
+     * INV_PROVOICE_EA_SYNC, indices 1 and 3), the demodulated signal is
+     * polarity-inverted relative to the canonical bit mapping, so every
+     * payload bit must be complemented before it is placed in the IMBE grid.
+     * This mirrors DSD-FME digitize() (dsd_dibit.c), which uses synctype 14
+     * for "+PV" and synctype 15 for "-PV" and inverts the returned dibit on
+     * synctype 15. sdrtrunk's slicer ({@code dev >= 0 -> 1}) matches the
+     * synctype-15 convention, so it inverts on the non-inverted ("+PV")
+     * variants — which are matched here as the INV_ patterns.
+     */
+    private boolean mInvertPayload = false;
+    private int mSyncIndex = -1;
+
     private boolean[] mFrameBits = new boolean[FRAME_BITS + 80];
 
     private int mFramesDetected = 0;
@@ -261,6 +275,8 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             return;
         }
 
+        mInvertPayload = needsInversion(mSyncIndex);
+
         int lid = readLid();
         int bfMarker = readInt(BF_OFFSET, BF_BITS);
         boolean[] frameBits = readFrameBits();
@@ -341,7 +357,7 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
         for(int i = 0; i < count; i++)
         {
             int index = tableOffset + i;
-            frame[EDACSProVoiceInterleave.pW[index]][EDACSProVoiceInterleave.pX[index]] = readFrameBit(bitOffset[0]++) ? 1 : 0;
+            frame[EDACSProVoiceInterleave.pW[index]][EDACSProVoiceInterleave.pX[index]] = readDataBit(bitOffset[0]++) ? 1 : 0;
         }
     }
 
@@ -349,6 +365,17 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
     {
         int startIndex = (mFrameBitCount - FRAME_BITS) % mFrameBits.length;
         return mFrameBits[(startIndex + bitOffset) % mFrameBits.length];
+    }
+
+    /**
+     * Reads a payload (non-sync) frame bit, applying the polarity inversion
+     * determined by the matched sync variant. The sync match itself uses raw
+     * {@link #readFrameBit(int)} so the pattern comparison sees the bits as
+     * received.
+     */
+    private boolean readDataBit(int bitOffset)
+    {
+        return readFrameBit(bitOffset) ^ mInvertPayload;
     }
 
     private boolean[] readFrameBits()
@@ -367,7 +394,7 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
         int value = 0;
         for(int i = 0; i < bitCount; i++)
         {
-            if(readFrameBit(bitOffset + i))
+            if(readDataBit(bitOffset + i))
             {
                 value |= (1 << (bitCount - 1 - i));
             }
@@ -386,7 +413,7 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
         int lid = 0;
         for(int i = 0; i < 16; i++)
         {
-            if(mFrameBits[(startIndex + i) % mFrameBits.length])
+            if(mFrameBits[(startIndex + i) % mFrameBits.length] ^ mInvertPayload)
             {
                 lid |= (1 << (15 - i));
             }
@@ -396,21 +423,30 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
 
     private String getSyncPattern()
     {
+        // The four sync patterns form two inverse pairs (0/1 standard, 2/3 EA),
+        // so every received polarity matches exactly one pattern non-inverted;
+        // checking the inverted forms would only re-detect the pair partner.
         for(int x = 0; x < PROVOICE_SYNC_PATTERNS.length; x++)
         {
-            String pattern = PROVOICE_SYNC_PATTERNS[x];
-            if(matchesSync(pattern, false))
+            if(matchesSync(PROVOICE_SYNC_PATTERNS[x], false))
             {
-                return "SYNC" + x;
-            }
-
-            if(matchesSync(pattern, true))
-            {
-                return "SYNC" + x + "_INVERTED";
+                mSyncIndex = x;
+                return "SYNC" + x + (needsInversion(x) ? "_INVERTED" : "");
             }
         }
 
+        mSyncIndex = -1;
         return null;
+    }
+
+    /**
+     * Indices 1 and 3 are the INV_PROVOICE_SYNC / INV_PROVOICE_EA_SYNC
+     * patterns; matching them means the payload must be bit-inverted.
+     * See {@link #mInvertPayload}.
+     */
+    private boolean needsInversion(int syncIndex)
+    {
+        return syncIndex == 1 || syncIndex == 3;
     }
 
     private boolean matchesSync(String pattern, boolean invert)

@@ -72,6 +72,10 @@ sourceSets {
 
 test {
     useJUnitPlatform()
+    // Forward selected -D properties to the test JVM for offline decoder harnesses.
+    ['pv.demod.wav', 'pv.mbe.out'].each { k ->
+        if(System.getProperty(k) != null) systemProperty(k, System.getProperty(k))
+    }
 }
 
 dependencies {
