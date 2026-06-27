@@ -21,7 +21,7 @@ sudo ln -s /opt/homebrew/Cellar/libusb/HEAD-9ceaa52/lib/libusb-1.0.0.dylib /opt/
 
 # sdrtrunk-vibes Fork
 
-This fork started as an attempt to fix P25P1/P2 encryption detection and NBFM squelch tail issues. It grew into implementing EDACS ProVoice (incomplete — see below) and, more successfully, Motorola Type II trunking for SmartZone systems.
+This fork started as an attempt to fix P25P1/P2 encryption detection and NBFM squelch tail issues. It grew into implementing EDACS EA trunking with ProVoice digital voice (working — see below) and Motorola Type II trunking for SmartZone systems.
 
 ## Motorola Type II Trunking (MVP — Working)
 
@@ -88,34 +88,51 @@ This fork started as an attempt to fix P25P1/P2 encryption detection and NBFM sq
 - SYSTEM_ID_CC reports inconsistent values — needs investigation
 - CONTROL_CHANNEL detection partially split into sub-messages
 
-## EDACS Trunking (Experimental — Incomplete)
+## EDACS EA Trunking + ProVoice Digital Voice (Working)
 
-**Status:** Control channel decoding works for Plan Bitmap, Site ID, and Adjacent Site messages. Group Call (talkgroup) decode is unreliable — BCH(40,28) false-passes dominate at our FM pipeline's bit error rate. Voice following and ProVoice audio are not implemented.
+**Status:** EDACS Extended Addressing (EA) control-channel decoding and ProVoice
+digital voice are working. The control channel decodes System ID, Site ID, Area,
+CC LCN, Adjacent Site, Dynamic Regroup, and Voice Group Channel
+Assignment/Update messages; voice grants are followed onto traffic channels and
+ProVoice IMBE 7100 voice is decoded to audio through the JMBE `PROVOICE` codec.
+The message field parsing (LCN, talkgroup, source, Assignment/Update bit) was
+validated bit-for-bit against DSD-FME `edacs-fme.c`.
 
-### What Was Tried
+### ProVoice audio
 
-| Approach | Result |
-|----------|--------|
-| Dotting-based burst detection with integrator AFC | Control channel locks, 2000+ msgs/10s, mostly garbage |
-| 48-bit sync frame detector (exact match) | Too strict at current BER |
-| 48-bit sync frame detector (relaxed 44/48) | Produced some real TGs (289, 296) but low rate |
-| Correlation-based sync validation (0.35–0.73 ratio) | Plan Bitmap passes, Group Calls don't |
-| Resampling to 24000 sps (matching DSD-FME RTL rate) | 71.5% correlation ratio achieved |
-| Resampling to 48000 sps (DSD-FME's internal rate) | Not enough samples per symbol |
-| Soft voter combining inverted copy deviations | No improvement |
-| 3-copy majority voting (matches DSD-FME edacs-fme.c) | More selective but still garbage |
-| FM gain multiplier (2x) | No improvement |
-| Zero-crossing symbol timing recovery | Produces real bits but timing drifts |
-| Jitter-based clock recovery (from dsd_symbol.c) | Requires exact 5.0 sps alignment |
+Each outbound ProVoice frame carries 4 interleaved IMBE 7100 voice frames. Frame
+extraction (`EDACSProVoiceDecoder` / `EDACSProVoiceInterleave`) mirrors DSD-FME
+`provoice.c` `processProVoice`, including the pW/pX 7×24 grid interleave schedule.
+Payload bits are inverted when an inverted-variant sync (`INV_PROVOICE_SYNC` /
+`INV_PROVOICE_EA_SYNC`) is matched, mirroring DSD-FME `digitize()` synctype 14
+("+PV") vs 15 ("-PV") handling — without this the IMBE grids decode inverted and
+the audio is garbled. The 7100→4400 conversion and speech synthesis are handled
+by the JMBE `PROVOICE` codec. Audio fidelity on a clean recording is intelligible
+(listener-confirmed); live decode quality tracks signal strength, since the
+ProVoice symbol slicer is simpler than DSD-FME's (no matched filter), so weak
+signals produce more muted/repeat frames.
 
-### Root Cause
+### ⚠️ Caveat: disable duplicate-call-detection-by-talkgroup for EDACS EA
 
-DSD-FME decodes the same signal perfectly at 48000 sps using rtl_fm's FM demodulator. The sdrtrunk FM demodulation pipeline (channelizer + scalar FmDemodulator at 50000 sps) produces lower-quality bits. BCH(40,28) can only correct 2 errors per 40-bit word — our BER is ~15% (~6 errors). Plan Bitmap survives because its all-1s pattern is robust to bit errors; Group Calls have varied bit patterns that don't survive BCH.
+EDACS EA is commonly **message-trunked** — every over/PTT in a conversation is
+assigned a *new* LCN, so one talkgroup legitimately appears on several traffic
+channels within a few seconds. sdrtrunk's duplicate-call detection flags any two
+in-progress calls sharing a talkgroup as duplicates and suppresses the later one
+for **playback, recording, and streaming alike**. Against EA message trunking
+this wrongly drops the continuation overs of a conversation, so you hear the
+first over and then dropouts/silence.
 
+**If you monitor an EDACS EA system, turn off "duplicate call detection by
+talkgroup"** (Preferences → Calls / Duplicate Call). This is a structural
+mismatch between message trunking and talkgroup-level dedup, not a decoder bug —
+the LCN/talkgroup/source parsing is confirmed correct against DSD-FME. Duplicate
+detection is scoped per channel **"System"** name, so leaving it on for P25 (or
+any system where a call holds one channel) is unaffected; only systems that share
+the same "System" name are ever compared.
 
 ### Reference
-- DSD-FME source
-- `.\dsd-fme.exe -fe -i rtl:0:853.725M:424:-1:24:0:2 -o null -Z`
+- DSD-FME `edacs-fme.c` (EA control channel), `provoice.c` / `provoice_const.h`
+  (ProVoice IMBE 7100 voice frame interleave)
 
 ## Other Fork Changes
 
