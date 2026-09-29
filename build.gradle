@@ -55,8 +55,22 @@ repositories {
     maven { url = "https://jitpack.io" }
 }
 
-//Version is defined in gradle.properties so that we can CLI override it for nightly builds.
-version = project.findProperty('projectVersion')
+//Version can be overridden via the projectVersion property (gradle.properties or -PprojectVersion=...).
+//This fork's gradle.properties is untracked (machine-specific JDK paths), so the default is defined here as:
+//  <upstream base version>-fw.<fork build number>-g<git commit>   e.g. 0.6.2-beta-1-fw.1-g31971be
+//Update upstreamBaseVersion when merging upstream, and bump forkBuildNumber for each deployed fork release.
+def upstreamBaseVersion = '0.6.2-beta-1'
+def forkBuildNumber = 1
+def gitCommit = 'nogit'
+try {
+    gitCommit = 'g' + providers.exec {
+        commandLine 'git', 'rev-parse', '--short', 'HEAD'
+    }.standardOutput.asText.get().trim()
+}
+catch(Exception ignored) {
+    //git not available - leave the commit as 'nogit'
+}
+version = project.findProperty('projectVersion') ?: "${upstreamBaseVersion}-fw.${forkBuildNumber}-${gitCommit}"
 
 //Java 26 is required for this version of the Project Panama preview/incubator feature
 java {
