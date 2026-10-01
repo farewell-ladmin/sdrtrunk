@@ -2,7 +2,6 @@ package io.github.dsheirer.module.decode.moto.channel;
 
 import io.github.dsheirer.channel.IChannelDescriptor;
 import io.github.dsheirer.module.decode.moto.Bandplan;
-import io.github.dsheirer.module.decode.p25.phase1.message.IFrequencyBand;
 import io.github.dsheirer.protocol.Protocol;
 
 import java.util.Objects;
@@ -45,17 +44,6 @@ public class MotorolaTypeIIChannel implements IChannelDescriptor
 
         double freqMHz = mBandplan.getUplinkFrequency(mChannelNumber);
         return freqMHz > 0 ? (long)(freqMHz * 1e6) : 0;
-    }
-
-    @Override
-    public int[] getFrequencyBandIdentifiers()
-    {
-        return new int[0];
-    }
-
-    @Override
-    public void setFrequencyBand(IFrequencyBand bandIdentifier)
-    {
     }
 
     @Override

@@ -135,7 +135,6 @@ public class DecoderFactory
 {
     private final static Logger mLog = LoggerFactory.getLogger(DecoderFactory.class);
     private static final double FM_CHANNEL_BANDWIDTH = 12500.0;
-    private static final boolean AUDIO_FILTER_ENABLE = true;
 
     /**
      * Returns a list of one primary decoder and any auxiliary decoders, as
@@ -523,7 +522,9 @@ public class DecoderFactory
     private static void processEDACS(UserPreferences userPreferences, Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
         EDACSDecoder decoder = new EDACSDecoder();
         modules.add(decoder);
-        modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
+        List<AbstractAudioFilter> filterList = new ArrayList<>();
+        filterList.add(new HighPassAudioFilter());
+        modules.add(new AudioModule(aliasList, filterList));
         modules.add(new EDACSDecoderState());
     }
 
@@ -541,7 +542,9 @@ public class DecoderFactory
             DecodeConfigNBFM nbfmConfig = new DecodeConfigNBFM();
             modules.add(new NBFMDecoder(nbfmConfig));
             modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig, false, Protocol.MOTOROLA_TYPE_II));
-            modules.add(new AudioModule(aliasList, 0, 60000, AUDIO_FILTER_ENABLE));
+            List<AbstractAudioFilter> filterList = new ArrayList<>();
+            filterList.add(new HighPassAudioFilter());
+            modules.add(new AudioModule(aliasList, 0, 60000, filterList));
         }
         else
         {

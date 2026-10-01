@@ -2,7 +2,6 @@ package io.github.dsheirer.module.decode.edacs.channel;
 
 import io.github.dsheirer.channel.IChannelDescriptor;
 import io.github.dsheirer.controller.channel.map.ChannelMap;
-import io.github.dsheirer.module.decode.p25.phase1.message.IFrequencyBand;
 import io.github.dsheirer.protocol.Protocol;
 
 /**
@@ -43,17 +42,6 @@ public class EDACSChannel implements IChannelDescriptor
     public long getUplinkFrequency()
     {
         return 0;
-    }
-
-    @Override
-    public int[] getFrequencyBandIdentifiers()
-    {
-        return new int[0];
-    }
-
-    @Override
-    public void setFrequencyBand(IFrequencyBand bandIdentifier)
-    {
     }
 
     @Override
