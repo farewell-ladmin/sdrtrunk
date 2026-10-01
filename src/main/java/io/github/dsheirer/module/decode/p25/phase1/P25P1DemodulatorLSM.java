@@ -304,7 +304,7 @@ public class P25P1DemodulatorLSM
                 //display the measured carrier offset value in the channel display
                 if(mMessageFramer.processWithSoftSyncDetect(softSymbol, hardSymbol))
                 {
-                    mFeedbackDecoder.processPLLError(pll, SYMBOL_RATE);
+                    mFeedbackDecoder.processPLLError(pll);
                     mSymbolsSinceValidNID = 0;
                     mLastValidPLL = pll;
                 }
