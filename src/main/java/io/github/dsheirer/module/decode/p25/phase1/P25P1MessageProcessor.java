@@ -306,10 +306,8 @@ public class P25P1MessageProcessor implements Listener<IMessage>
     private void processForFrequencyBands(AbstractMessage message)
     {
         //Insert frequency band identifier update messages into channel-type messages */
-        if(message instanceof IFrequencyBandReceiver)
+        if(message instanceof IFrequencyBandReceiver receiver)
         {
-            IFrequencyBandReceiver receiver = (IFrequencyBandReceiver)message;
-
             List<IChannelDescriptor> channels = receiver.getChannels();
 
             for(IChannelDescriptor channel : channels)
@@ -327,17 +325,9 @@ public class P25P1MessageProcessor implements Listener<IMessage>
         }
 
         //Store band identifiers so that they can be injected into channel type messages
-        if(message instanceof IFrequencyBand)
+        if(message instanceof IFrequencyBand band && band.isValid())
         {
-            IFrequencyBand bandIdentifier = (IFrequencyBand)message;
-
-            //Only store the frequency band if it's new so we don't hold on to more than one instance of the
-            //frequency band message.  Otherwise, we'll hold on to several instances of each message as they get
-            //injected into other messages with channel information.
-            if(!mFrequencyBandMap.containsKey(bandIdentifier.getIdentifier()))
-            {
-                mFrequencyBandMap.put(bandIdentifier.getIdentifier(), bandIdentifier);
-            }
+            mFrequencyBandMap.put(band.getIdentifier(), band);
         }
     }
 
