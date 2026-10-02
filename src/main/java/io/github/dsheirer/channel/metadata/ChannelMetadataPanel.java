@@ -27,6 +27,7 @@ import io.github.dsheirer.controller.channel.ChannelModel;
 import io.github.dsheirer.controller.channel.ChannelProcessingManager;
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.gui.playlist.channel.ViewChannelRequest;
+import io.github.dsheirer.gui.theme.ColorContrast;
 import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.configuration.FrequencyConfigurationIdentifier;
@@ -246,7 +247,7 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                 {
                     label.setText(Joiner.on(", ").skipNulls().join(aliases));
                     label.setIcon(mIconModel.getIcon(aliases.get(0).getIconName(), IconModel.DEFAULT_ICON_SIZE));
-                    label.setForeground(aliases.get(0).getDisplayColor());
+                    label.setForeground(ColorContrast.readable(aliases.get(0).getDisplayColor(), label.getBackground()));
                 }
                 else
                 {
