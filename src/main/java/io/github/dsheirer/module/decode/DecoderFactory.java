@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * Copyright (C) 2014-2025 Dennis Sheirer
+ * Copyright (C) 2014-2026 Dennis Sheirer
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,14 +21,14 @@ package io.github.dsheirer.module.decode;
 import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.alias.action.AliasActionManager;
-import io.github.dsheirer.audio.AbstractAudioModule;
-import io.github.dsheirer.audio.AudioModule;
+import io.github.dsheirer.audio.*;
 import io.github.dsheirer.channel.IChannelDescriptor;
 import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.Channel.ChannelType;
 import io.github.dsheirer.controller.channel.map.ChannelMap;
 import io.github.dsheirer.controller.channel.map.ChannelMapModel;
+import io.github.dsheirer.dsp.filter.iir.DeemphasisFilter;
 import io.github.dsheirer.filter.AllPassFilter;
 import io.github.dsheirer.filter.FilterSet;
 import io.github.dsheirer.filter.IFilter;
@@ -41,9 +41,10 @@ import io.github.dsheirer.module.decode.am.AMDecoderState;
 import io.github.dsheirer.module.decode.am.DecodeConfigAM;
 import io.github.dsheirer.module.decode.config.AuxDecodeConfiguration;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
-import io.github.dsheirer.module.decode.dcs.DCSDecoder;
-import io.github.dsheirer.module.decode.dcs.DCSDecoderState;
-import io.github.dsheirer.module.decode.dcs.DCSMessageFilter;
+import io.github.dsheirer.module.decode.nbfm.DeemphasisMode;
+import io.github.dsheirer.module.decode.squelch.dcs.DCSDecoder;
+import io.github.dsheirer.module.decode.squelch.dcs.DCSDecoderState;
+import io.github.dsheirer.module.decode.squelch.dcs.DCSMessageFilter;
 import io.github.dsheirer.module.decode.dmr.DMRDecoder;
 import io.github.dsheirer.module.decode.dmr.DMRDecoderState;
 import io.github.dsheirer.module.decode.dmr.DMRTrafficChannelManager;
@@ -89,6 +90,12 @@ import io.github.dsheirer.module.decode.mpt1327.Sync;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.module.decode.nbfm.NBFMDecoder;
 import io.github.dsheirer.module.decode.nbfm.NBFMDecoderState;
+import io.github.dsheirer.module.decode.nxdn.DecodeConfigNXDN;
+import io.github.dsheirer.module.decode.nxdn.NXDNDecoder;
+import io.github.dsheirer.module.decode.nxdn.NXDNDecoderState;
+import io.github.dsheirer.module.decode.nxdn.NXDNTrafficChannelManager;
+import io.github.dsheirer.module.decode.nxdn.audio.NXDNAudioModule;
+import io.github.dsheirer.module.decode.nxdn.layer3.filter.NXDNMessageFilterSet;
 import io.github.dsheirer.module.decode.p25.P25TrafficChannelManager;
 import io.github.dsheirer.module.decode.p25.audio.P25P1AudioModule;
 import io.github.dsheirer.module.decode.p25.audio.P25P2AudioModule;
@@ -128,7 +135,6 @@ public class DecoderFactory
 {
     private final static Logger mLog = LoggerFactory.getLogger(DecoderFactory.class);
     private static final double FM_CHANNEL_BANDWIDTH = 12500.0;
-    private static final boolean AUDIO_FILTER_ENABLE = true;
 
     /**
      * Returns a list of one primary decoder and any auxiliary decoders, as
@@ -180,9 +186,6 @@ public class DecoderFactory
                 processDMR(channel, userPreferences, modules, aliasList, (DecodeConfigDMR)decodeConfig,
                     trafficChannelManager, channelDescriptor);
                 break;
-            case NBFM:
-                processNBFM(channel, modules, aliasList, decodeConfig);
-                break;
             case LTR:
                 processLTRStandard(channel, modules, aliasList, (DecodeConfigLTRStandard) decodeConfig);
                 break;
@@ -192,6 +195,12 @@ public class DecoderFactory
             case MPT1327:
                 processMPT1327(channelMapModel, channel, modules, aliasList, channelType,
                         (DecodeConfigMPT1327) decodeConfig, userPreferences);
+                break;
+            case NBFM:
+                processNBFM(channel, modules, aliasList, decodeConfig);
+                break;
+            case NXDN:
+                processNXDN(channel, userPreferences, modules, aliasList, decodeConfig, trafficChannelManager, channelDescriptor);
                 break;
             case PASSPORT:
                 processPassport(channel, modules, aliasList, decodeConfig);
@@ -340,7 +349,9 @@ public class DecoderFactory
     private static void processPassport(Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
         modules.add(new PassportDecoder(decodeConfig));
         modules.add(new PassportDecoderState());
-        modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
+        List<AbstractAudioFilter> filterList = new ArrayList<>();
+        filterList.add(new HighPassAudioFilter());
+        modules.add(new AudioModule(aliasList, filterList));
         if(channel.getSourceConfiguration().getSourceType() == SourceType.TUNER)
         {
             modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH));
@@ -364,14 +375,15 @@ public class DecoderFactory
         ChannelMap channelMap = channelMapModel.getChannelMap(mptConfig.getChannelMapName());
         Sync sync = mptConfig.getSync();
         modules.add(new MPT1327Decoder(sync));
-
+        List<AbstractAudioFilter> filterList = new ArrayList<>();
+        filterList.add(new HighPassAudioFilter());
         final int callTimeoutMilliseconds = mptConfig.getCallTimeoutSeconds() * 1000;
 
         // Set max segment audio sample length slightly above call timeout to
         // not create a new segment if the processing chain finishes a bit after
         // actual call timeout.
         long maxAudioSegmentLengthMillis = (callTimeoutMilliseconds + 5000);
-        modules.add(new AudioModule(aliasList, AbstractAudioModule.DEFAULT_TIMESLOT, maxAudioSegmentLengthMillis, AUDIO_FILTER_ENABLE));
+        modules.add(new AudioModule(aliasList, AbstractAudioModule.DEFAULT_TIMESLOT, maxAudioSegmentLengthMillis, filterList));
 
         SourceType sourceType = channel.getSourceConfiguration().getSourceType();
         if(sourceType == SourceType.TUNER || sourceType == SourceType.TUNER_MULTIPLE_FREQUENCIES)
@@ -410,7 +422,9 @@ public class DecoderFactory
     private static void processLTRNet(Channel channel, List<Module> modules, AliasList aliasList, DecodeConfigLTRNet decodeConfig) {
         modules.add(new LTRNetDecoder(decodeConfig));
         modules.add(new LTRNetDecoderState());
-        modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
+        List<AbstractAudioFilter> filterList = new ArrayList<>();
+        filterList.add(new HighPassAudioFilter());
+        modules.add(new AudioModule(aliasList, filterList));
         if(channel.getSourceConfiguration().getSourceType() == SourceType.TUNER)
         {
             modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH));
@@ -428,7 +442,9 @@ public class DecoderFactory
         MessageDirection direction = decodeConfig.getMessageDirection();
         modules.add(new LTRStandardDecoder(direction));
         modules.add(new LTRStandardDecoderState());
-        modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
+        List<AbstractAudioFilter> filterList = new ArrayList<>();
+        filterList.add(new HighPassAudioFilter());
+        modules.add(new AudioModule(aliasList, filterList));
         if(channel.getSourceConfiguration().getSourceType() == SourceType.TUNER)
         {
             modules.add(new FMDemodulatorModule(FM_CHANNEL_BANDWIDTH));
@@ -451,9 +467,26 @@ public class DecoderFactory
         }
 
         DecodeConfigNBFM decodeConfigNBFM = (DecodeConfigNBFM)decodeConfig;
-        modules.add(new NBFMDecoder(decodeConfigNBFM));
-        modules.add(new NBFMDecoderState(channel.getName(), decodeConfigNBFM));
-        modules.add(new AudioModule(aliasList, 0, 60000, decodeConfigNBFM.isAudioFilter()));
+        NBFMDecoderState decoderState = new NBFMDecoderState(channel.getName(), decodeConfigNBFM);
+        NBFMDecoder decoder = new NBFMDecoder(decodeConfigNBFM);
+        modules.add(decoder);
+        modules.add(decoderState);
+        List<AbstractAudioFilter> filterList = new ArrayList<>();
+        if(decodeConfigNBFM.isAudioFilter())
+        {
+            filterList.add(new HighPassAudioFilter());
+        }
+        if(decodeConfigNBFM.getDeemphasis() != null && decodeConfigNBFM.getDeemphasis() != DeemphasisMode.NONE)
+        {
+            float cutoff = (float) decodeConfigNBFM.getDeemphasis().getCutoff();
+            filterList.add(new DeemphasisFilter(8000, cutoff, 1.0f));
+        }
+        if(decodeConfigNBFM.isAudioALC())
+        {
+            filterList.add(new AudioGainFilter(1, 10, 0.90f));
+        }
+
+        modules.add(new AudioModule(aliasList, 0, 60000, filterList));
     }
 
     /**
@@ -469,7 +502,8 @@ public class DecoderFactory
         {
             modules.add(new AMDecoder(configAM));
             modules.add(new AMDecoderState(channel.getName(), configAM));
-            modules.add(new AudioModule(aliasList, 0, 60000, AUDIO_FILTER_ENABLE));
+            List<AbstractAudioFilter> filterList = new ArrayList<>();   // no default filtering for AM
+            modules.add(new AudioModule(aliasList, 0, 60000, filterList));
         }
         else
         {
@@ -488,7 +522,9 @@ public class DecoderFactory
     private static void processEDACS(UserPreferences userPreferences, Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
         EDACSDecoder decoder = new EDACSDecoder();
         modules.add(decoder);
-        modules.add(new AudioModule(aliasList, AUDIO_FILTER_ENABLE));
+        List<AbstractAudioFilter> filterList = new ArrayList<>();
+        filterList.add(new HighPassAudioFilter());
+        modules.add(new AudioModule(aliasList, filterList));
         modules.add(new EDACSDecoderState());
     }
 
@@ -506,7 +542,9 @@ public class DecoderFactory
             DecodeConfigNBFM nbfmConfig = new DecodeConfigNBFM();
             modules.add(new NBFMDecoder(nbfmConfig));
             modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig, false, Protocol.MOTOROLA_TYPE_II));
-            modules.add(new AudioModule(aliasList, 0, 60000, AUDIO_FILTER_ENABLE));
+            List<AbstractAudioFilter> filterList = new ArrayList<>();
+            filterList.add(new HighPassAudioFilter());
+            modules.add(new AudioModule(aliasList, 0, 60000, filterList));
         }
         else
         {
@@ -515,6 +553,55 @@ public class DecoderFactory
             modules.add(tcm);
             modules.add(new MotorolaTypeIIDecoderState(channel, tcm));
             // No AudioModule on control channel - CC is data-only, audio belongs on traffic channels
+        }
+    }
+
+    /**
+     * Creates decoder modules for the NXDN decoder.
+     * @param channel configuration with center frequency
+     * @param modules to receive the decoder modules
+     * @param aliasList for aliases.
+     * @param decodeConfig with details
+     */
+    private static void processNXDN(Channel channel, UserPreferences userPreferences, List<Module> modules,
+                                    AliasList aliasList, DecodeConfiguration decodeConfig,
+                                    TrafficChannelManager trafficChannelManager, IChannelDescriptor channelDescriptor)
+    {
+        if(decodeConfig instanceof DecodeConfigNXDN configNXDN)
+        {
+            //Add a channel rotation monitor when we have multiple control channel frequencies specified
+            if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
+                    sctmf.hasMultipleFrequencies())
+            {
+                List<State> activeStates = new ArrayList<>();
+                activeStates.add(State.CONTROL);
+                modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
+            }
+
+            modules.add(new NXDNDecoder(configNXDN));
+            modules.add(new NXDNAudioModule(userPreferences, aliasList));
+
+            if(channel.getChannelType() == ChannelType.STANDARD)
+            {
+                NXDNTrafficChannelManager primaryTCM = new NXDNTrafficChannelManager(channel);
+                modules.add(primaryTCM);
+                modules.add(new NXDNDecoderState(channel, primaryTCM));
+            }
+            else if(trafficChannelManager instanceof NXDNTrafficChannelManager parentTCM)
+            {
+                NXDNDecoderState decoderState = new NXDNDecoderState(channel, parentTCM);
+                decoderState.setCurrentChannel(channelDescriptor);
+                modules.add(decoderState);
+            }
+            else
+            {
+                mLog.warn("Expected non-null NXDN traffic channel manager for channel " + channel.getName());
+            }
+
+        }
+        else
+        {
+            throw new IllegalArgumentException("Can't create NXDN decoder - unrecognized config: " + decodeConfig);
         }
     }
 
@@ -678,9 +765,9 @@ public class DecoderFactory
 
         for(Module module : modules)
         {
-            if(module instanceof Decoder)
+            if(module instanceof Decoder decoder)
             {
-                filterSet.addFilters(getMessageFilter(((Decoder)module).getDecoderType()));
+                filterSet.addFilters(getMessageFilter(decoder.getDecoderType()));
             }
         }
 
@@ -724,6 +811,9 @@ public class DecoderFactory
             case MPT1327:
                 filters.add(new MPT1327MessageFilter());
                 break;
+            case NXDN:
+                filters.add(new NXDNMessageFilterSet());
+                break;
             case P25_PHASE1:
                 filters.add(new P25P1MessageFilterSet());
                 break;
@@ -764,6 +854,8 @@ public class DecoderFactory
                 return new DecodeConfigMPT1327();
             case NBFM:
                 return new DecodeConfigNBFM();
+            case NXDN:
+                return new DecodeConfigNXDN();
             case PASSPORT:
                 return new DecodeConfigPassport();
             case P25_PHASE1:
@@ -827,6 +919,13 @@ public class DecoderFactory
                     copyNBFM.setSquelchNoiseCloseThreshold(origNBFM.getSquelchNoiseCloseThreshold());
                     copyNBFM.setTalkgroup(origNBFM.getTalkgroup());
                     return copyNBFM;
+                case NXDN:
+                    DecodeConfigNXDN origNXDN = (DecodeConfigNXDN)config;
+                    DecodeConfigNXDN copyNXDN = new DecodeConfigNXDN();
+                    copyNXDN.setChannelMap(origNXDN.getChannelMap());
+                    copyNXDN.setTransmissionMode(origNXDN.getTransmissionMode());
+                    copyNXDN.setTrafficChannelPoolSize(origNXDN.getTrafficChannelPoolSize());
+                    return copyNXDN;
                 case P25_PHASE1:
                     DecodeConfigP25Phase1 originalP25 = (DecodeConfigP25Phase1)config;
                     DecodeConfigP25Phase1 copyP25 = new DecodeConfigP25Phase1();

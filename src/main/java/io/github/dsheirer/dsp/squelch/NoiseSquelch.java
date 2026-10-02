@@ -88,6 +88,10 @@ public class NoiseSquelch implements INoiseSquelchController
      */
     public boolean isSquelched()
     {
+        if(mSquelchOverride)
+        {
+            return false;
+        }
         return mSquelch;
     }
 
