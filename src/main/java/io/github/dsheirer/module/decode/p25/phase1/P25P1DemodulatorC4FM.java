@@ -50,7 +50,12 @@ import org.apache.commons.math3.stat.descriptive.moment.StandardDeviation;
 public class P25P1DemodulatorC4FM
 {
     private static final float EQUALIZER_LOOP_GAIN = 0.15f;
-    private static final float EQUALIZER_MAXIMUM_PLL = (float)(Math.PI / 3.0); //+/- 800 Hz
+    /**
+     * Maximum equalizer balance (PLL) correction: +/- PI/12 (+/- 200 Hz).  Soft symbols are wrapped to +/- PI, so a
+     * large balance value would rotate the outer +/- 3 symbols across the wrap boundary and the equalizer can walk
+     * into a false lock.  Larger frequency errors are corrected upstream by the channel frequency error manager.
+     */
+    private static final float EQUALIZER_MAXIMUM_PLL = (float)(Math.PI / 12.0);
     private static final float EQUALIZER_MAXIMUM_GAIN = 1.25f;
     private static final float EQUALIZER_RECALIBRATE_THRESHOLD = (float)(Math.PI / 8.0);
     private static final float SOFT_SYMBOL_QUADRANT_BOUNDARY = (float)(Math.PI / 2.0);
@@ -106,6 +111,27 @@ public class P25P1DemodulatorC4FM
     {
         mMessageFramer = messageFramer;
         mFeedbackDecoder = feedbackDecoder;
+    }
+
+    /**
+     * Wraps a phase value into the range -PI to PI.  The sample buffer holds phases that are unwrapped from sample to
+     * sample so that interpolation between adjacent samples is continuous, but a symbol whose phase trajectory
+     * crosses +/- PI (eg multipath/simulcast distortion of the outer +/- 3 symbols) is then a full rotation away from
+     * its true value.  Wrap interpolated values before using them for symbol decisions and sync correlation.
+     */
+    static float wrap(float phase)
+    {
+        while(phase > Math.PI)
+        {
+            phase -= TWO_PI;
+        }
+
+        while(phase < -Math.PI)
+        {
+            phase += TWO_PI;
+        }
+
+        return phase;
     }
 
     /**
@@ -606,7 +632,7 @@ public class P25P1DemodulatorC4FM
         for(int x = 0; x < 24; x++)
         {
             int integral = (int)Math.floor(pointer);
-            float softSymbol = LinearInterpolator.calculate(mBuffer[integral], mBuffer[integral + 1], pointer - integral);
+            float softSymbol = wrap(LinearInterpolator.calculate(mBuffer[integral], mBuffer[integral + 1], pointer - integral));
             correlation += softSymbol * SYNC_PATTERN_SYMBOLS[x];
             energy += softSymbol * softSymbol;
             pointer += mSamplesPerSymbol;
@@ -989,9 +1015,7 @@ public class P25P1DemodulatorC4FM
          */
         public float getEqualizedSymbol(float sample1, float sample2, double mu)
         {
-            sample1 = equalize(sample1);
-            sample2 = equalize(sample2);
-            return LinearInterpolator.calculate(sample1, sample2, mu);
+            return wrap(LinearInterpolator.calculate(sample1, sample2, mu) + mPll) * mGain;
         }
 
         /**
@@ -1005,28 +1029,8 @@ public class P25P1DemodulatorC4FM
          */
         public float getEqualizedSymbol(float sample1, float sample2, double mu, Correction correction)
         {
-            sample1 = (sample1 + mPll + correction.getPllAdjustment()) * (mGain + correction.getGainAdjustment());
-            sample2 = (sample2 + mPll + correction.getPllAdjustment()) * (mGain + correction.getGainAdjustment());
-
-            if(sample1 > Math.PI)
-            {
-                sample1 -= TWO_PI;
-            }
-            else if(sample1 < -Math.PI)
-            {
-                sample1 += TWO_PI;
-            }
-
-            if(sample2 > Math.PI)
-            {
-                sample2 -= TWO_PI;
-            }
-            else if(sample2 < -Math.PI)
-            {
-                sample2 += TWO_PI;
-            }
-
-            return LinearInterpolator.calculate(sample1, sample2, mu);
+            float interpolated = LinearInterpolator.calculate(sample1, sample2, mu);
+            return wrap(interpolated + mPll + correction.getPllAdjustment()) * (mGain + correction.getGainAdjustment());
         }
 
         /**
@@ -1064,7 +1068,7 @@ public class P25P1DemodulatorC4FM
                 if(bufferPointer < maxPointer)
                 {
                     softSymbol = LinearInterpolator.calculate(mBuffer[bufferPointer], mBuffer[bufferPointer + 1], fractional);
-                    softSymbol = (softSymbol + balance) * gain;
+                    softSymbol = wrap(softSymbol + balance) * gain;
                 }
                 else
                 {
@@ -1117,7 +1121,7 @@ public class P25P1DemodulatorC4FM
                 mGain += correction.getGainAdjustment();
             }
 
-            //Constrain to +/- PI/2 (+/- 1200 Hertz of offset)
+            //Constrain balance to the maximum PLL correction
             mPll = Math.min(mPll, EQUALIZER_MAXIMUM_PLL);
             mPll = Math.max(mPll, -EQUALIZER_MAXIMUM_PLL);
 
@@ -1142,10 +1146,10 @@ public class P25P1DemodulatorC4FM
             float symbol = SYNC_PATTERN_SYMBOLS[23];
             float resampledSoftSymbol = LinearInterpolator.calculate(mBuffer[resampleStartIntegral],
                     mBuffer[resampleStartIntegral + 1], resampleStart - resampleStartIntegral);
-            resampledSoftSymbol = (resampledSoftSymbol + mPll) * mGain;
+            resampledSoftSymbol = wrap(resampledSoftSymbol + mPll) * mGain;
 
             float balancePlus3Symbols = 0;
-            float balanceMinus3Symbols = resampledSoftSymbol - symbol;
+            float balanceMinus3Symbols = wrap(resampledSoftSymbol - symbol);
             float gainAccumulator = Math.abs(symbol) - Math.abs(resampledSoftSymbol);
             Dibit resampledDibit = toSymbol(resampledSoftSymbol);
             int bitErrorCount = SYNC_PATTERN_DIBITS[23].getBitErrorFrom(resampledDibit);
@@ -1160,17 +1164,17 @@ public class P25P1DemodulatorC4FM
                     symbol = SYNC_PATTERN_SYMBOLS[x];
                     resampledSoftSymbol = LinearInterpolator.calculate(mBuffer[resampleStartIntegral],
                             mBuffer[resampleStartIntegral + 1], resampleStart - resampleStartIntegral);
-                    resampledSoftSymbol = (resampledSoftSymbol + mPll) * mGain;
+                    resampledSoftSymbol = wrap(resampledSoftSymbol + mPll) * mGain;
                     resampledDibit = toSymbol(resampledSoftSymbol);
                     bitErrorCount += SYNC_PATTERN_DIBITS[x].getBitErrorFrom(resampledDibit);
 
                     if(symbol > 0)
                     {
-                        balancePlus3Symbols += (resampledSoftSymbol - symbol);
+                        balancePlus3Symbols += wrap(resampledSoftSymbol - symbol);
                     }
                     else
                     {
-                        balanceMinus3Symbols += (resampledSoftSymbol - symbol);
+                        balanceMinus3Symbols += wrap(resampledSoftSymbol - symbol);
                     }
 
                     gainAccumulator += Math.abs(symbol) - Math.abs(resampledSoftSymbol);
