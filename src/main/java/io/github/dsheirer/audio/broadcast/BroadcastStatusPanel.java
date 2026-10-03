@@ -18,6 +18,8 @@
  */
 package io.github.dsheirer.audio.broadcast;
 
+import io.github.dsheirer.gui.theme.ColorContrast;
+import io.github.dsheirer.gui.theme.ThemeManager;
 import io.github.dsheirer.icon.Icon;
 import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.preference.UserPreferences;
@@ -120,6 +122,13 @@ public class BroadcastStatusPanel extends JPanel
      */
     public class StatusCellRenderer extends DefaultTableCellRenderer
     {
+        private static final Color STATUS_GREEN = Color.GREEN;
+        private static final Color STATUS_GREEN_DARK = new Color(0x2E7D32);
+        private static final Color STATUS_YELLOW = Color.YELLOW;
+        private static final Color STATUS_YELLOW_DARK = new Color(0x9E7C00);
+        private static final Color STATUS_RED = Color.RED;
+        private static final Color STATUS_RED_DARK = new Color(0xB71C1C);
+
         public StatusCellRenderer()
         {
             setOpaque(true);
@@ -145,8 +154,7 @@ public class BroadcastStatusPanel extends JPanel
 
                     if(state == BroadcastState.CONNECTED)
                     {
-                        setBackground(Color.GREEN);
-                        setForeground(table.getForeground());
+                        setStatusColors(STATUS_GREEN, STATUS_GREEN_DARK);
                     }
                     else if(state == BroadcastState.DISABLED)
                     {
@@ -159,13 +167,11 @@ public class BroadcastStatusPanel extends JPanel
                     else if(state == BroadcastState.INVALID_SETTINGS ||
                             state == BroadcastState.NETWORK_UNAVAILABLE)
                     {
-                        setBackground(Color.YELLOW);
-                        setForeground(table.getForeground());
+                        setStatusColors(STATUS_YELLOW, STATUS_YELLOW_DARK);
                     }
                     else if(state.isErrorState())
                     {
-                        setBackground(Color.RED);
-                        setForeground(table.getForeground());
+                        setStatusColors(STATUS_RED, STATUS_RED_DARK);
                     }
                     else
                     {
@@ -181,6 +187,17 @@ public class BroadcastStatusPanel extends JPanel
             }
 
             return this;
+        }
+
+        /**
+         * Applies a status background, using the muted variant on dark themes, with black or white text
+         * (whichever is more readable) since the theme foreground may not contrast with the status color.
+         */
+        private void setStatusColors(Color light, Color dark)
+        {
+            Color background = ThemeManager.getInstance().isDarkMode() ? dark : light;
+            setBackground(background);
+            setForeground(ColorContrast.textOn(background));
         }
     }
 }
