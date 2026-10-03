@@ -59,6 +59,12 @@ public class P25P1DemodulatorC4FM
     private static final float SYNC_THRESHOLD_EQUALIZED = 110;
     private static final float TWO_PI = (float)(Math.PI * 2.0);
     private static final float[] SYNC_PATTERN_SYMBOLS = P25P1SyncDetector.syncPatternToSymbols();
+    private static final float SYNC_PATTERN_ENERGY = getEnergy(SYNC_PATTERN_SYMBOLS);
+    /**
+     * Normalized sync correlation above which a detection is accepted even when the sample deviation suggests noise.
+     * Measured against noise, false detections peak around 0.85 of normalized correlation.
+     */
+    private static final float NORMALIZED_SYNC_CORRELATION_THRESHOLD = 0.9f;
     private static final int BUFFER_WORKSPACE_LENGTH = 1024;
     private static final int DIBIT_LENGTH_NID = 33; //32 dibits (64 bits) +1 status
     private static final int DIBIT_LENGTH_SYNC = 24;
@@ -100,6 +106,21 @@ public class P25P1DemodulatorC4FM
     {
         mMessageFramer = messageFramer;
         mFeedbackDecoder = feedbackDecoder;
+    }
+
+    /**
+     * Sum of the squared values.
+     */
+    private static float getEnergy(float[] values)
+    {
+        float energy = 0;
+
+        for(float value: values)
+        {
+            energy += value * value;
+        }
+
+        return energy;
     }
 
     /**
@@ -542,8 +563,13 @@ public class P25P1DemodulatorC4FM
      * Indicates if the samples in the sample buffer that contain a detected sync pattern have a standard deviation
      * that is lower than the expected sample to sample deviation for a modulated signal.  False detects against
      * noise tend to have a standard deviation that is 2x the expected value.
+     *
+     * Simulcast and multipath distortion can also raise the sample to sample deviation of a clean signal above the
+     * threshold.  A detection that exceeds the threshold is therefore only treated as noise when the sampled sync
+     * symbols also correlate weakly with the sync pattern, since false detects against noise do not produce a strong
+     * normalized correlation.
      * @param offset to the sample representing the final symbol in the detected sync pattern.
-     * @return true if the standard deviation is more than expected.
+     * @return true if the standard deviation is more than expected and the sync correlation is weak.
      */
     public boolean isNoisy(double offset)
     {
@@ -557,7 +583,41 @@ public class P25P1DemodulatorC4FM
             standardDeviation.increment(mBuffer[i] - mBuffer[i + 1]);
         }
 
-        return standardDeviation.getResult() > mNoiseStandardDeviationThreshold;
+        if(standardDeviation.getResult() <= mNoiseStandardDeviationThreshold)
+        {
+            return false;
+        }
+
+        return getNormalizedSyncCorrelation(offset) < NORMALIZED_SYNC_CORRELATION_THRESHOLD;
+    }
+
+    /**
+     * Calculates the normalized correlation (cosine similarity) of the unequalized soft symbols against the sync
+     * pattern.  A perfect match produces 1.0, independent of signal gain.
+     * @param offset to the sample representing the final symbol in the detected sync pattern.
+     * @return normalized correlation in the range -1.0 to 1.0
+     */
+    private float getNormalizedSyncCorrelation(double offset)
+    {
+        double pointer = offset - (23 * mSamplesPerSymbol);
+        float correlation = 0;
+        float energy = 0;
+
+        for(int x = 0; x < 24; x++)
+        {
+            int integral = (int)Math.floor(pointer);
+            float softSymbol = LinearInterpolator.calculate(mBuffer[integral], mBuffer[integral + 1], pointer - integral);
+            correlation += softSymbol * SYNC_PATTERN_SYMBOLS[x];
+            energy += softSymbol * softSymbol;
+            pointer += mSamplesPerSymbol;
+        }
+
+        if(energy <= 0)
+        {
+            return 0;
+        }
+
+        return (float)(correlation / Math.sqrt(energy * SYNC_PATTERN_ENERGY));
     }
 
     /**
