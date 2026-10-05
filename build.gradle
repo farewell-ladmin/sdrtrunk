@@ -62,7 +62,7 @@ repositories {
 //  <upstream base version>-fw.<fork build number>-g<git commit>   e.g. 0.6.2-beta-1-fw.1-g31971be
 //Update upstreamBaseVersion when merging upstream, and bump forkBuildNumber for each deployed fork release.
 def upstreamBaseVersion = '0.6.2-beta-1'
-def forkBuildNumber = 4
+def forkBuildNumber = 5
 def gitCommit = 'nogit'
 try {
     gitCommit = 'g' + providers.exec {
