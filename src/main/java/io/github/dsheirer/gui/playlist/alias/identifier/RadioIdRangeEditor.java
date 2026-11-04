@@ -297,9 +297,9 @@ public class RadioIdRangeEditor extends IdentifierEditor<RadioRange>
         details.add(new RadioIdDetail(Protocol.MOTOROLA_TYPE_II, IntegerFormat.HEXADECIMAL, new HexFormatter(0,0xFFFF),
                 new HexFormatter(0,0xFFFF), "Format: 0 - FFFF"));
         details.add(new RadioIdDetail(Protocol.NXDN, IntegerFormat.DECIMAL, new IntegerFormatter(0,0xFFFF),
-                new IntegerFormatter(0,0xFFFF),"Format: 0 - 65,535"));
+                new IntegerFormatter(0,0xFFFF),"Format: 1 - 65,535"));
         details.add(new RadioIdDetail(Protocol.NXDN, IntegerFormat.HEXADECIMAL, new HexFormatter(0,0xFFFF),
-                new IntegerFormatter(0,0xFFFF),"Format: 0 - FFFF"));
+                new HexFormatter(0,0xFFFF),"Format: 1 - FFFF"));
         details.add(new RadioIdDetail(Protocol.PASSPORT, IntegerFormat.DECIMAL, new IntegerFormatter(0,0x7FFFFF),
                 new IntegerFormatter(0,0x7FFFFF), "Format: 0 - 8388607"));
         details.add(new RadioIdDetail(Protocol.PASSPORT, IntegerFormat.HEXADECIMAL, new HexFormatter(0,0x7FFFFF),
