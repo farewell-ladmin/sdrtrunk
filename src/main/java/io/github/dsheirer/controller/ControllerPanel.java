@@ -32,10 +32,9 @@ import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.settings.SettingsManager;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.source.tuner.ui.TunerViewPanel;
-import java.awt.Color;
 import java.awt.Dimension;
 import jiconfont.icons.font_awesome.FontAwesome;
-import jiconfont.swing.IconFontSwing;
+import io.github.dsheirer.gui.theme.ThemedFontIcon;
 import net.miginfocom.swing.MigLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -80,7 +79,9 @@ public class ControllerPanel extends JPanel
 
     private void init()
     {
-        setLayout(new MigLayout("insets 0 0 0 0 ", "[grow,fill]", "[]0[grow,fill]0[]"));
+        //Disable visual padding.  MigLayout otherwise assumes the tabbed pane has native Aqua margins on macOS and
+        //expands it past the bounds of this panel, clipping the tab content on the left, right and bottom edges.
+        setLayout(new MigLayout("insets 0 0 0 0, novisualpadding", "[grow,fill]", "[]0[grow,fill]0[]"));
 
         add(mAudioPanel, "wrap");
 
@@ -104,7 +105,7 @@ public class ControllerPanel extends JPanel
         mTabbedPane.addTab("Map", mMapPanel);
         mTabbedPane.addTab("Tuners", mTunerManagerPanel);
 
-        Icon playIcon = IconFontSwing.buildIcon(FontAwesome.PLAY_CIRCLE_O, 20, Color.DARK_GRAY);
+        Icon playIcon = new ThemedFontIcon(FontAwesome.PLAY_CIRCLE_O, 20);
         mTabbedPane.addTab("Playlist Editor", playIcon, new JLabel("Show Playlist Manager"));
         mSettingsTabIndex = mTabbedPane.getTabCount() - 1;
 

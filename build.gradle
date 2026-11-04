@@ -27,8 +27,8 @@ import java.text.SimpleDateFormat
  * Instructions for building/compiling the sdrtrunk application.
  *
  * Prerequisites:
- * Install and configure an OpenJDK version 26+ that includes the JavaFX modules (e.g. Bellsoft Liberica JDK)
- * - Optional: install and configure Gradle 9.6+
+ * Install and configure an OpenJDK version 27+ that includes the JavaFX modules (e.g. Bellsoft Liberica JDK)
+ * - Optional: install and configure Gradle 9.8+
  *
  * Scenario 1: run the application via gradle command line from the source code root directory:
  * command: ./gradlew run
@@ -52,17 +52,12 @@ plugins {
     id 'org.beryx.runtime' version '2.0.1'
 }
 
-repositories {
-    mavenCentral()
-    maven { url = "https://jitpack.io" }
-}
-
 //Version can be overridden via the projectVersion property (gradle.properties or -PprojectVersion=...).
 //This fork's gradle.properties is untracked (machine-specific JDK paths), so the default is defined here as:
 //  <upstream base version>-fw.<fork build number>-g<git commit>   e.g. 0.6.2-beta-1-fw.1-g31971be
 //Update upstreamBaseVersion when merging upstream, and bump forkBuildNumber for each deployed fork release.
 def upstreamBaseVersion = '0.6.2-beta-1'
-def forkBuildNumber = 5
+def forkBuildNumber = 6
 def gitCommit = 'nogit'
 try {
     gitCommit = 'g' + providers.exec {
@@ -74,12 +69,37 @@ catch(Exception ignored) {
 }
 version = project.findProperty('projectVersion') ?: "${upstreamBaseVersion}-fw.${forkBuildNumber}-${gitCommit}"
 
-//Java 26 is required for this version of the Project Panama preview/incubator feature
+//Java 27 is required for this version of the Project Panama preview/incubator feature
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(26)
+        languageVersion = JavaLanguageVersion.of(27)
         vendor = JvmVendorSpec.BELLSOFT
     }
+}
+
+/**
+ * Verifies that the selected toolchain JDK includes the JavaFX modules (e.g. Bellsoft Liberica 'Full JDK').
+ *
+ * Gradle's toolchain spec can only select by language version, vendor and implementation, so it can't distinguish
+ * between the Liberica JDK packages that do and don't bundle JavaFX. This task fails the build with a clear message
+ * instead of allowing compilation to fail with missing javafx packages.
+ */
+tasks.register('verifyToolchainJavaFx') {
+    def jdkHome = javaToolchains.launcherFor(java.toolchain).map { it.metadata.installationPath.asFile }
+
+    doLast {
+        def release = new File(jdkHome.get(), 'release')
+
+        if(!release.exists() || !release.text.contains('javafx.base')) {
+            throw new GradleException("The JDK at [${jdkHome.get()}] does not include the JavaFX modules. Install " +
+                    "the Bellsoft Liberica JDK 27 'Full' package (includes LibericaFX), or use " +
+                    "-Porg.gradle.java.installations.paths=<jdk path> to specify the JDK that Gradle should use.")
+        }
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn 'verifyToolchainJavaFx'
 }
 
 test {
@@ -97,13 +117,13 @@ dependencies {
 
     //Jitpack imports
     implementation 'com.github.dnault:libresample4j:master'
-    implementation 'com.github.DSheirer.jmbe:jmbe-api:1.0.0'
+    implementation 'com.github.DSheirer.jmbe:api:v2.1.0'
     implementation 'com.github.nwaldispuehl:java-lame:v3.98.4'
 
     //mavenCentral/jcenter imports
-    implementation 'ch.qos.logback:logback-classic:1.5.38'
+    implementation 'ch.qos.logback:logback-classic:1.6.3'
     implementation 'ch.qos.logback:logback-core:1.5.38'
-    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.22.1'
+    implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.22.4'
     implementation 'com.fazecast:jSerialComm:2.11.4'
     implementation 'com.formdev:flatlaf:3.7.2'
     implementation 'com.formdev:flatlaf-intellij-themes:3.7.2'
@@ -118,6 +138,8 @@ dependencies {
     implementation 'com.mpatric:mp3agic:0.9.1'
     implementation 'commons-io:commons-io:2.22.0'
     implementation 'eu.hansolo:charts:1.0.5'
+    implementation 'io.github.dsheirer:jbladerf:2.6.0' //bladeRF tuners - GitHub release, see settings.gradle
+    implementation 'io.github.dsheirer:jhydrasdr:1.1.3' //HydraSDR tuners - GitHub release, see settings.gradle
     implementation 'io.github.dsheirer:radio-reference-api:18.0.0'
     implementation 'io.github.dsheirer:usb4java-native-libraries:1.3.3' //OSX & Windows aarch64 native libs
     implementation 'io.github.dsheirer:usb4java:1.3.5' //Fork with Loader support for OSX Multi-Version
@@ -140,7 +162,7 @@ dependencies {
 def os = DefaultNativePlatform.currentOperatingSystem
 
 /**
- * This is needed for the JDK23 vector API ... until it moves out of incubation or preview
+ * This is needed for the JDK23+ vector API ... until it moves out of incubation or preview
  */
 tasks.withType(JavaCompile).configureEach {
     options.compilerArgs.add("--enable-preview") //Project Panama Vector API is still in incubator
@@ -159,7 +181,6 @@ def jvmArgsWindows =
          '--enable-native-access=ALL-UNNAMED', //Suppress unsafe warnings for FFM API Foreign Memory calls
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
-         '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64'] //SDRPlay API library path
 
 /**
@@ -170,7 +191,6 @@ def jvmArgsLinux =
          '--add-modules=jdk.incubator.vector',   //Project Panama vector API is still in incubator
          '--enable-preview', //Project Panama Vector & Foreign Function APIs remain in incubator
          '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
-         '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--enable-native-access=ALL-UNNAMED'] //SDRPlay API library path
 
@@ -251,7 +271,7 @@ String jdk_windows_aarch64 = jdk_base + 'windows-arm64/jdk-26.0.1-full'
  * Download URLs to download the JDK as part of the gradle build packaging process
  */
 //Must match the build of the local JDK running jlink exactly (jlink rejects a different java.base build).
-def jdk_download_base = "https://download.bell-sw.com/java/26.0.2+13/bellsoft-jdk26.0.2+13-"
+def jdk_download_base = "https://download.bell-sw.com/java/27.0.1+11/bellsoft-jdk27.0.1+11-"
 def jdk_download_suffix = "-full.tar.gz"
 def jdk_download_linux_aarch64 = jdk_download_base + "linux-aarch64" + jdk_download_suffix
 def jdk_download_linux_x86_64 = jdk_download_base + "linux-amd64" + jdk_download_suffix
