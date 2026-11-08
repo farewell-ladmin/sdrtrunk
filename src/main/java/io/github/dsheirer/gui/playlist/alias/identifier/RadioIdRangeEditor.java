@@ -73,6 +73,8 @@ public class RadioIdRangeEditor extends IdentifierEditor<RadioRange>
         gridPane.getChildren().add(getProtocolLabel());
 
         Label valueLabel = new Label("Radio ID Range");
+        valueLabel.setLabelFor(getMinRadioIdField());
+        valueLabel.setAccessibleText("Radio ID Range start");
         GridPane.setHalignment(valueLabel, HPos.RIGHT);
         GridPane.setConstraints(valueLabel, 1, 0);
         gridPane.getChildren().add(valueLabel);
@@ -81,6 +83,8 @@ public class RadioIdRangeEditor extends IdentifierEditor<RadioRange>
         gridPane.getChildren().add(getMinRadioIdField());
 
         Label dashLabel = new Label("-");
+        dashLabel.setLabelFor(getMaxRadioIdField());
+        dashLabel.setAccessibleText("Radio ID Range end");
         GridPane.setConstraints(dashLabel, 3, 0);
         gridPane.getChildren().add(dashLabel);
 
@@ -296,10 +300,10 @@ public class RadioIdRangeEditor extends IdentifierEditor<RadioRange>
                 new IntegerFormatter(0,0xFFFF), "Format: 0 - 65535"));
         details.add(new RadioIdDetail(Protocol.MOTOROLA_TYPE_II, IntegerFormat.HEXADECIMAL, new HexFormatter(0,0xFFFF),
                 new HexFormatter(0,0xFFFF), "Format: 0 - FFFF"));
-        details.add(new RadioIdDetail(Protocol.NXDN, IntegerFormat.DECIMAL, new IntegerFormatter(0,0xFFFF),
-                new IntegerFormatter(0,0xFFFF),"Format: 1 - 65,535"));
-        details.add(new RadioIdDetail(Protocol.NXDN, IntegerFormat.HEXADECIMAL, new HexFormatter(0,0xFFFF),
-                new HexFormatter(0,0xFFFF),"Format: 1 - FFFF"));
+        details.add(new RadioIdDetail(Protocol.NXDN, IntegerFormat.DECIMAL, new IntegerFormatter(1,0xFFFF),
+                new IntegerFormatter(1,0xFFFF),"Format: 1 - 65,535"));
+        details.add(new RadioIdDetail(Protocol.NXDN, IntegerFormat.HEXADECIMAL, new HexFormatter(1,0xFFFF),
+                new HexFormatter(1,0xFFFF),"Format: 1 - FFFF"));
         details.add(new RadioIdDetail(Protocol.PASSPORT, IntegerFormat.DECIMAL, new IntegerFormatter(0,0x7FFFFF),
                 new IntegerFormatter(0,0x7FFFFF), "Format: 0 - 8388607"));
         details.add(new RadioIdDetail(Protocol.PASSPORT, IntegerFormat.HEXADECIMAL, new HexFormatter(0,0x7FFFFF),
