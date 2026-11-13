@@ -68,6 +68,8 @@ catch(Exception ignored) {
     //git not available - leave the commit as 'nogit'
 }
 version = project.findProperty('projectVersion') ?: "${upstreamBaseVersion}-fw.${forkBuildNumber}-${gitCommit}"
+//Recorded in the jar manifest (Git-Describe) as upstream does; the fork's equivalent is the base version and commit.
+String gitDescribe = "v${upstreamBaseVersion}-fw.${forkBuildNumber}-${gitCommit}"
 
 tasks.register('printVersion') {
     description = 'Prints the project version'
