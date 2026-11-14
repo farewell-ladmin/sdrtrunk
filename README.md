@@ -156,3 +156,30 @@ committed to the code base, so it's not really 'nightly' as much as it is 'curre
 * **Operating System:** Windows (~~32 or~~ 64-bit), Linux (~~32 or~~ 64-bit) or Mac (64-bit, 12.x or higher)
 * **CPU:** 4-core
 * **RAM:** 8GB or more (preferred).  Depending on usage, 4GB may be sufficient.
+
+## Creating a Release (Maintainers)
+Releases are built and published automatically by the [Release](.github/workflows/release.yml) GitHub workflow
+whenever a version tag is pushed to the repository.
+
+The version is taken from the tag, so there is no version number to update in the code. Create and push a tag
+with a leading `v`, following the naming convention described in `gradle.properties` (e.g. `v0.6.2-alpha-1`,
+`v0.6.2-beta-1` or `v0.6.2`):
+```
+git tag v0.6.2-beta-1
+git push origin v0.6.2-beta-1
+```
+
+Builds made from an untagged commit get a version like `0.6.2-beta-1-14-g4626d567` (14 commits after the
+`v0.6.2-beta-1` tag, at commit `4626d567`), with `-dirty` appended when there are uncommitted changes.
+
+The workflow then:
+* Verifies that the version the build derives from git matches the tag and fails if it does not.
+* Builds and tests the code, then creates the release zips for Linux, Mac and Windows (x86-64 and aarch64).
+* Creates a GitHub release titled `Version <version>` with auto-generated release notes (a "What's Changed" list of
+the PRs merged since the previous version tag), and attaches the six zip
+files plus a `SHA256SUMS` checksum file.
+* Marks tags containing a dash (alpha and beta versions) as pre-releases. Tags without a dash become full releases.
+
+If the workflow fails part way through, fix the problem and re-run it from the Actions tab. It resumes from the
+draft release left behind. It won't modify a release that has already been published. To rebuild a published
+release, delete the release and the tag on GitHub, then push the tag again.

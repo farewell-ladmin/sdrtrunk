@@ -22,16 +22,16 @@ package io.github.dsheirer.gui.theme;
 import java.awt.Color;
 
 /**
- * Utility methods for keeping foreground colors readable against the current theme's backgrounds.
- *
- * Contrast is measured with the WCAG relative luminance contrast ratio (1.0 to 21.0).
+ * Color contrast utilities based on the WCAG relative luminance and contrast ratio definitions.
  */
 public final class ColorContrast
 {
     /**
-     * Minimum contrast ratio for user-colored text (WCAG AA for normal text).
+     * Minimum contrast ratio to treat a color as readable.  This is the WCAG threshold for graphics and large text.
+     * The stricter 4.5 threshold for body text would also replace saturated colors like pure red that read fine on a
+     * dark background.
      */
-    public static final double MINIMUM_TEXT_CONTRAST = 4.5;
+    public static final double MINIMUM_CONTRAST_RATIO = 3.0;
 
     private static final double BLEND_STEP = 0.05;
 
@@ -40,77 +40,70 @@ public final class ColorContrast
     }
 
     /**
-     * Relative luminance of the color per WCAG 2.x.
-     * @param color to measure
-     * @return luminance in range 0.0 (black) to 1.0 (white)
+     * Provides a color that is readable against the background.
+     * @param color that is preferred.
+     * @param background that the color is rendered against.
+     * @return the color when it has sufficient contrast, otherwise its RGB complement, adjusted toward white or black
+     * when the complement also lacks sufficient contrast (e.g. mid-gray is its own complement).
      */
-    public static double luminance(Color color)
+    public static Color getReadable(Color color, Color background)
     {
-        return 0.2126 * linear(color.getRed()) + 0.7152 * linear(color.getGreen()) + 0.0722 * linear(color.getBlue());
-    }
+        if(getContrastRatio(color, background) >= MINIMUM_CONTRAST_RATIO)
+        {
+            return color;
+        }
 
-    private static double linear(int channel)
-    {
-        double c = channel / 255.0;
-        return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+        Color complement = new Color(255 - color.getRed(), 255 - color.getGreen(), 255 - color.getBlue());
+        Color target = getContrastRatio(Color.WHITE, background) >= getContrastRatio(Color.BLACK, background) ?
+            Color.WHITE : Color.BLACK;
+
+        Color readable = complement;
+
+        for(double fraction = BLEND_STEP; getContrastRatio(readable, background) < MINIMUM_CONTRAST_RATIO &&
+            fraction < 1.0; fraction += BLEND_STEP)
+        {
+            readable = blend(complement, target, fraction);
+        }
+
+        return getContrastRatio(readable, background) < MINIMUM_CONTRAST_RATIO ? target : readable;
     }
 
     /**
      * Contrast ratio between two colors.
-     * @return ratio in range 1.0 (identical luminance) to 21.0 (black on white)
+     * @return ratio in the range 1.0 (identical luminance) to 21.0 (black and white).
      */
-    public static double contrast(Color a, Color b)
+    public static double getContrastRatio(Color a, Color b)
     {
-        double la = luminance(a);
-        double lb = luminance(b);
-        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+        double luminanceA = getRelativeLuminance(a);
+        double luminanceB = getRelativeLuminance(b);
+        return (Math.max(luminanceA, luminanceB) + 0.05) / (Math.min(luminanceA, luminanceB) + 0.05);
+    }
+
+    private static double getRelativeLuminance(Color color)
+    {
+        return 0.2126 * linearize(color.getRed()) + 0.7152 * linearize(color.getGreen()) +
+            0.0722 * linearize(color.getBlue());
+    }
+
+    private static double linearize(int value)
+    {
+        double normalized = value / 255.0;
+        return normalized <= 0.04045 ? normalized / 12.92 : Math.pow((normalized + 0.055) / 1.055, 2.4);
     }
 
     /**
-     * Returns the foreground color unchanged when it already has sufficient contrast against the background,
-     * otherwise blends it toward white (on dark backgrounds) or black (on light backgrounds) just far enough to
-     * reach the minimum text contrast.  This keeps the hue of user-chosen colors (e.g. alias colors) while making
-     * them legible on both light and dark themes.
-     *
-     * @param foreground color requested for the text
-     * @param background color the text is drawn on
-     * @return readable foreground color
-     */
-    public static Color readable(Color foreground, Color background)
-    {
-        if(foreground == null || background == null || contrast(foreground, background) >= MINIMUM_TEXT_CONTRAST)
-        {
-            return foreground;
-        }
-
-        Color target = luminance(background) < 0.5 ? Color.WHITE : Color.BLACK;
-
-        for(double fraction = BLEND_STEP; fraction < 1.0; fraction += BLEND_STEP)
-        {
-            Color blended = blend(foreground, target, fraction);
-
-            if(contrast(blended, background) >= MINIMUM_TEXT_CONTRAST)
-            {
-                return blended;
-            }
-        }
-
-        return target;
-    }
-
-    /**
-     * Black or white, whichever has more contrast against the background.  Use for text drawn on
-     * fixed status colors (e.g. green/yellow/red cells) where the theme's foreground may be unreadable.
+     * Black or white, whichever has more contrast against the background.  Use for text drawn on fixed status colors
+     * (e.g. green/yellow/red cells) where the theme's foreground may be unreadable.
      */
     public static Color textOn(Color background)
     {
-        return contrast(Color.BLACK, background) >= contrast(Color.WHITE, background) ? Color.BLACK : Color.WHITE;
+        return getContrastRatio(Color.BLACK, background) >= getContrastRatio(Color.WHITE, background) ?
+            Color.BLACK : Color.WHITE;
     }
 
     private static Color blend(Color from, Color to, double fraction)
     {
-        return new Color(
-            (int)Math.round(from.getRed() + (to.getRed() - from.getRed()) * fraction),
+        return new Color((int)Math.round(from.getRed() + (to.getRed() - from.getRed()) * fraction),
             (int)Math.round(from.getGreen() + (to.getGreen() - from.getGreen()) * fraction),
             (int)Math.round(from.getBlue() + (to.getBlue() - from.getBlue()) * fraction));
     }

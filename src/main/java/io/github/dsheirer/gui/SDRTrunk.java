@@ -1,6 +1,6 @@
 /*
  * *****************************************************************************
- * Copyright (C) 2014-2025 Dennis Sheirer
+ * Copyright (C) 2014-2026 Dennis Sheirer
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -38,6 +38,7 @@ import io.github.dsheirer.gui.preference.PreferenceEditorType;
 import io.github.dsheirer.gui.preference.ViewUserPreferenceEditorRequest;
 import io.github.dsheirer.gui.preference.calibration.CalibrationDialog;
 import io.github.dsheirer.gui.theme.ThemeManager;
+import io.github.dsheirer.gui.theme.ThemedFontIcon;
 import io.github.dsheirer.gui.viewer.ViewRecordingViewerRequest;
 import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.log.ApplicationLog;
@@ -55,11 +56,11 @@ import io.github.dsheirer.source.tuner.Tuner;
 import io.github.dsheirer.source.tuner.TunerEvent;
 import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
-import io.github.dsheirer.source.tuner.sdrplay.api.SDRPlayLibraryHelper;
 import io.github.dsheirer.source.tuner.ui.TunerSpectralDisplayManager;
 import io.github.dsheirer.spectrum.DisableSpectrumWaterfallMenuItem;
 import io.github.dsheirer.spectrum.ShowTunerMenuItem;
 import io.github.dsheirer.spectrum.SpectralDisplayPanel;
+import io.github.dsheirer.util.DuplicateLibraryDetector;
 import io.github.dsheirer.util.ThreadPool;
 import io.github.dsheirer.util.TimeStamp;
 import io.github.dsheirer.vector.calibrate.CalibrationManager;
@@ -81,6 +82,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.prefs.Preferences;
 import javafx.application.Platform;
@@ -158,12 +160,15 @@ public class SDRTrunk implements Listener<TunerEvent>
         mApplicationLog = new ApplicationLog(mUserPreferences);
         mApplicationLog.start();
 
-        //Note: invoke this early in the application lifecycle, before the TunerManager causes the sdrplay classes
-        //to be loaded since the jextract auto-generated code attempts to load the library by name and that can fail
-        //when the library was not installed into a normal/default location, particularly on windows OS systems.
-        if(SDRPlayLibraryHelper.LOADED)
+        Map<String,List<String>> duplicateLibraries = DuplicateLibraryDetector.findDuplicates();
+
+        if(!duplicateLibraries.isEmpty())
         {
-            mLog.info("SDRPlay API native library preemptively loaded");
+            mLog.warn("More than one version of these libraries is in the library folder [" +
+                    DuplicateLibraryDetector.getFolder(duplicateLibraries) + "].  This happens when a new version of " +
+                    "sdrtrunk is unzipped over an older one, and it can load the older library code.  Delete the " +
+                    "sdrtrunk folder and unzip the release into an empty folder.\n" +
+                    DuplicateLibraryDetector.describe(duplicateLibraries));
         }
 
         mResourceMonitor = new ResourceMonitor(mUserPreferences);
@@ -265,6 +270,11 @@ public class SDRTrunk implements Listener<TunerEvent>
                     if(tuner != null)
                     {
                         updateTitle(tuner.getPreferredName());
+                    }
+
+                    if(!duplicateLibraries.isEmpty())
+                    {
+                        showDuplicateLibrariesDialog(duplicateLibraries);
                     }
                 }
 
@@ -473,14 +483,14 @@ public class SDRTrunk implements Listener<TunerEvent>
         JMenu viewMenu = new JMenu("View");
 
         JMenuItem viewPlaylistItem = new JMenuItem("Playlist Editor");
-        viewPlaylistItem.setIcon(IconFontSwing.buildIcon(FontAwesome.PLAY_CIRCLE_O, 12));
+        viewPlaylistItem.setIcon(new ThemedFontIcon(FontAwesome.PLAY_CIRCLE_O, 12));
         viewPlaylistItem.addActionListener(e -> MyEventBus.getGlobalEventBus().post(new ViewPlaylistRequest()));
         viewMenu.add(viewPlaylistItem);
 
         viewMenu.add(new JSeparator());
 
         JMenuItem viewApplicationLogsMenu = new JMenuItem("Application Log Files");
-        viewApplicationLogsMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.FOLDER_OPEN_O, 12));
+        viewApplicationLogsMenu.setIcon(new ThemedFontIcon(FontAwesome.FOLDER_OPEN_O, 12));
         viewApplicationLogsMenu.addActionListener(arg0 -> {
             File logsDirectory = mUserPreferences.getDirectoryPreference().getDirectoryApplicationLog().toFile();
             try
@@ -500,7 +510,7 @@ public class SDRTrunk implements Listener<TunerEvent>
         viewMenu.add(viewApplicationLogsMenu);
 
         JMenuItem viewRecordingsMenuItem = new JMenuItem("Audio Recordings");
-        viewRecordingsMenuItem.setIcon(IconFontSwing.buildIcon(FontAwesome.FOLDER_OPEN_O, 12));
+        viewRecordingsMenuItem.setIcon(new ThemedFontIcon(FontAwesome.FOLDER_OPEN_O, 12));
         viewRecordingsMenuItem.addActionListener(arg0 -> {
             File recordingsDirectory = mUserPreferences.getDirectoryPreference().getDirectoryRecording().toFile();
 
@@ -522,7 +532,7 @@ public class SDRTrunk implements Listener<TunerEvent>
         viewMenu.add(viewRecordingsMenuItem);
 
         JMenuItem viewEventLogsMenu = new JMenuItem("Channel Event Log Files");
-        viewEventLogsMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.FOLDER_OPEN_O, 12));
+        viewEventLogsMenu.setIcon(new ThemedFontIcon(FontAwesome.FOLDER_OPEN_O, 12));
         viewEventLogsMenu.addActionListener(arg0 -> {
             File eventLogsDirectory = mUserPreferences.getDirectoryPreference().getDirectoryEventLog().toFile();
             try
@@ -542,17 +552,17 @@ public class SDRTrunk implements Listener<TunerEvent>
         viewMenu.add(viewEventLogsMenu);
 
         JMenuItem iconManagerMenu = new JMenuItem("Icon Manager");
-        iconManagerMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.PICTURE_O, 12));
+        iconManagerMenu.setIcon(new ThemedFontIcon(FontAwesome.PICTURE_O, 12));
         iconManagerMenu.addActionListener(arg0 -> MyEventBus.getGlobalEventBus().post(new ViewIconManagerRequest()));
         viewMenu.add(iconManagerMenu);
 
         JMenuItem recordingViewerMenu = new JMenuItem("Message Recording Viewer (.bits)");
-        recordingViewerMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.BRAILLE, 12));
+        recordingViewerMenu.setIcon(new ThemedFontIcon(FontAwesome.BRAILLE, 12));
         recordingViewerMenu.addActionListener(e -> MyEventBus.getGlobalEventBus().post(new ViewRecordingViewerRequest()));
         viewMenu.add(recordingViewerMenu);
 
         JMenuItem viewScreenCapturesMenu = new JMenuItem("Screen Captures");
-        viewScreenCapturesMenu.setIcon(IconFontSwing.buildIcon(FontAwesome.FOLDER_OPEN_O, 12));
+        viewScreenCapturesMenu.setIcon(new ThemedFontIcon(FontAwesome.FOLDER_OPEN_O, 12));
         viewScreenCapturesMenu.addActionListener(arg0 -> {
             File screenCapturesDirectory = mUserPreferences.getDirectoryPreference().getDirectoryScreenCapture().toFile();
             try
@@ -572,7 +582,7 @@ public class SDRTrunk implements Listener<TunerEvent>
         viewMenu.add(viewScreenCapturesMenu);
 
         JMenuItem preferencesItem = new JMenuItem("User Preferences");
-        preferencesItem.setIcon(IconFontSwing.buildIcon(FontAwesome.COG, 12));
+        preferencesItem.setIcon(new ThemedFontIcon(FontAwesome.COG, 12));
         preferencesItem.addActionListener(e -> MyEventBus.getGlobalEventBus().post(new ViewUserPreferenceEditorRequest()));
         viewMenu.add(preferencesItem);
 
@@ -587,7 +597,7 @@ public class SDRTrunk implements Listener<TunerEvent>
         menuBar.add(viewMenu);
 
         JMenuItem screenCaptureItem = new JMenuItem("Screen Capture");
-        screenCaptureItem.setIcon(IconFontSwing.buildIcon(FontAwesome.CAMERA, 12));
+        screenCaptureItem.setIcon(new ThemedFontIcon(FontAwesome.CAMERA, 12));
         screenCaptureItem.setMnemonic(KeyEvent.VK_C);
         screenCaptureItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_C, ActionEvent.ALT_MASK));
         screenCaptureItem.setMaximumSize(screenCaptureItem.getPreferredSize());
@@ -966,6 +976,28 @@ public class SDRTrunk implements Listener<TunerEvent>
             });
         }
 
+    }
+
+    /**
+     * Warns the user that the library folder holds more than one version of some libraries, which happens when a new
+     * release is unzipped over an older one.  The launch scripts put every jar in the library folder on the class
+     * path, so the older library code can load instead of the newer code.
+     * @param duplicates library name to jar paths, from DuplicateLibraryDetector
+     */
+    private void showDuplicateLibrariesDialog(Map<String,List<String>> duplicates)
+    {
+        String message = "<html><body style='width: 450px'>" +
+                "<p>The sdrtrunk library folder has more than one version of these libraries:</p><br>" +
+                "<pre>" + DuplicateLibraryDetector.describe(duplicates) + "</pre>" +
+                "<p>This happens when a new version of sdrtrunk is unzipped over an older one. sdrtrunk can load " +
+                "the older library code, which can cause crashes or errors that the newer version fixed.</p><br>" +
+                "<p>Close sdrtrunk, delete the sdrtrunk folder that contains this library folder and unzip the " +
+                "release into a new, empty folder:</p><br>" +
+                "<p><b>" + DuplicateLibraryDetector.getFolder(duplicates) + "</b></p><br>" +
+                "<p>Your playlist and settings are stored in your user folder and won't be affected.</p>" +
+                "</body></html>";
+
+        JOptionPane.showMessageDialog(mMainGui, message, "Duplicate Library Versions", JOptionPane.WARNING_MESSAGE);
     }
 
     /**
