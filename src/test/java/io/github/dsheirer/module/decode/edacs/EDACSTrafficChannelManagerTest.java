@@ -140,4 +140,24 @@ class EDACSTrafficChannelManagerTest
 
         assertEquals(2, events.size(), "a grant after the stale threshold should start a new event");
     }
+
+    @Test
+    void trafficCallEndEndsTheGrantEvent()
+    {
+        Set<IDecodeEvent> events = Collections.newSetFromMap(new IdentityHashMap<>());
+        EDACSTrafficChannelManager manager = manager(events);
+        EventBus bus = new EventBus();
+        bus.register(new FakeChannelProcessingManager(manager, false));
+        manager.setInterModuleEventBus(bus);
+
+        EDACSChannel channel = lcn1();
+        long start = System.currentTimeMillis();
+        grant(manager, channel, 530, start);
+        manager.processTrafficVoice(FREQUENCY, start + 1000);
+        manager.processTrafficCallEnd(FREQUENCY, start + 1400);
+
+        IDecodeEvent event = events.iterator().next();
+        assertEquals(1, events.size());
+        assertEquals(1400, event.getDuration(), "the call should end when the voice stops");
+    }
 }

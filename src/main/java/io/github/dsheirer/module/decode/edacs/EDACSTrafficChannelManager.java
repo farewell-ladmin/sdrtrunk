@@ -387,6 +387,25 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     }
 
     /**
+     * Ends the call event for the traffic channel at the frequency when its voice stops, the way
+     * P25TrafficChannelManager.processP1TrafficCallEnd() completes the call on a TDU terminator.
+     * @param frequency of the traffic channel
+     * @param timestamp of the end of the voice
+     */
+    public synchronized void processTrafficCallEnd(long frequency, long timestamp)
+    {
+        for(Map.Entry<EDACSChannel, DecodeEvent> entry : mChannelGrantEventMap.entrySet())
+        {
+            if(entry.getKey().getDownlinkFrequency() == frequency)
+            {
+                entry.getValue().end(timestamp);
+                broadcast(entry.getValue());
+                return;
+            }
+        }
+    }
+
+    /**
      * Indicates if the event hasn't been updated within the threshold, using the same rule and threshold as
      * ChannelEventTracker.isStale().
      */

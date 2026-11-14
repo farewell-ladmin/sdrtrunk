@@ -11,6 +11,7 @@ import io.github.dsheirer.identifier.IdentifierClass;
 import io.github.dsheirer.identifier.MutableIdentifierCollection;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.IMessageListener;
+import io.github.dsheirer.message.SyncLossMessage;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.edacs.channel.EDACSChannel;
 import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
@@ -85,6 +86,12 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
             return;
         }
 
+        if(message instanceof SyncLossMessage syncLoss)
+        {
+            processProVoiceEnd(syncLoss.getTimestamp());
+            return;
+        }
+
         if(!(message instanceof EDACSMessage edacs))
         {
             return;
@@ -145,6 +152,25 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
 
         // Control channel stays in CONTROL state - CALL is for traffic channels only
         broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
+    }
+
+    /**
+     * End of a ProVoice over (frames stopped).  Handled like P25 handles a TDU terminator: tell the traffic channel
+     * manager the call ended and leave the CALL state, which closes the audio segment.
+     */
+    private void processProVoiceEnd(long timestamp)
+    {
+        if(mChannelType != ChannelType.TRAFFIC)
+        {
+            return;
+        }
+
+        if(mTrafficChannelManager != null)
+        {
+            mTrafficChannelManager.processTrafficCallEnd(getCurrentFrequency(), timestamp);
+        }
+
+        broadcast(new DecoderStateEvent(this, Event.DECODE, State.ACTIVE));
     }
 
     private void processProVoiceTraffic(EDACSProVoiceMessage message)

@@ -15,6 +15,8 @@ import io.github.dsheirer.identifier.IdentifierUpdateListener;
 import io.github.dsheirer.identifier.IdentifierUpdateNotification;
 import io.github.dsheirer.identifier.MutableIdentifierCollection;
 import io.github.dsheirer.message.IMessage;
+import io.github.dsheirer.message.SyncLossMessage;
+import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.module.decode.Decoder;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.edacs.message.EDACSProVoiceMessage;
@@ -77,8 +79,16 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             "13313133113113333311313133133311"
     };
 
+    /**
+     * ProVoice has no end-of-transmission terminator in the decoded stream, so the end of an over is detected as
+     * missing frames.  5 frames (~400 ms) is shorter than the typical gap between message-trunked overs.
+     */
+    private static final int SYNC_LOSS_BITS = FRAME_BITS * 5;
+
     private int mFramePending = 0;
     private int mFrameBitCount = 0;
+    private int mBitsSinceFrame = 0;
+    private boolean mFrameSyncActive = false;
 
     /**
      * When the matched sync is an inverted variant (INV_PROVOICE_SYNC /
@@ -245,6 +255,18 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             mFrameBits[mFrameBitCount % mFrameBits.length] = bit;
             mFrameBitCount++;
 
+            //Report the end of the over (as the P25 framer reports sync loss) when frames stop arriving
+            if(mFrameSyncActive && ++mBitsSinceFrame >= SYNC_LOSS_BITS)
+            {
+                mFrameSyncActive = false;
+
+                if(messageListener != null)
+                {
+                    messageListener.receive(new SyncLossMessage(System.currentTimeMillis(), mBitsSinceFrame,
+                        Protocol.EDACS));
+                }
+            }
+
             if(mFramePending > 0)
             {
                 mFramePending--;
@@ -302,6 +324,8 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
                 new int[][][] { grid1, grid2, grid3, grid4 }, frameBits, lid, bfMarker, syncPattern,
                 System.currentTimeMillis(), mIdentifierCollection.getIdentifiers());
         mFramesDecoded++;
+        mFrameSyncActive = true;
+        mBitsSinceFrame = 0;
         if(messageListener != null)
         {
             messageListener.receive(message);
