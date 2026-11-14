@@ -55,6 +55,11 @@ public enum RecorderType
     TRAFFIC_DEMODULATED_BIT_STREAM("Traffic Channel Demodulated Bitstream (.bits)"),
 
     /**
+     * Traffic channel demodulated/discriminator audio samples.
+     */
+    TRAFFIC_DEMODULATED_AUDIO("Traffic Channel Demodulated Audio (.wav)"),
+
+    /**
      * MBE Audio Codec frames
      */
     MBE_CALL_SEQUENCE("MBE Audio CODEC Frames (.mbe)"),
