@@ -274,8 +274,12 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         if(mEventLogConfigurationEditor == null)
         {
             List<EventLogType> types = new ArrayList<>();
+            //Same options as the P25 Phase 1, DMR and NXDN editors.  Traffic channels only log the TRAFFIC types
+            //(EventLogManager), so without them EDACS traffic channel events and messages could not be logged.
             types.add(EventLogType.CALL_EVENT);
             types.add(EventLogType.DECODED_MESSAGE);
+            types.add(EventLogType.TRAFFIC_CALL_EVENT);
+            types.add(EventLogType.TRAFFIC_DECODED_MESSAGE);
 
             mEventLogConfigurationEditor = new EventLogConfigurationEditor(types);
             mEventLogConfigurationEditor.setPadding(new Insets(5,5,5,5));
