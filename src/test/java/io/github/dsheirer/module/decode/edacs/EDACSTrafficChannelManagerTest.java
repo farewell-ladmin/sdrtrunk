@@ -37,6 +37,7 @@ class EDACSTrafficChannelManagerTest
         private final EDACSTrafficChannelManager mManager;
         private final boolean mReject;
         private int mStartRequests;
+        private Channel mLastChannel;
 
         FakeChannelProcessingManager(EDACSTrafficChannelManager manager, boolean reject)
         {
@@ -48,6 +49,7 @@ class EDACSTrafficChannelManagerTest
         public void start(ChannelStartProcessingRequest request)
         {
             mStartRequests++;
+            mLastChannel = request.getChannel();
 
             if(mReject)
             {
@@ -74,8 +76,15 @@ class EDACSTrafficChannelManagerTest
 
     private static void grant(EDACSTrafficChannelManager manager, EDACSChannel channel, int talkgroup, long timestamp)
     {
+        grant(manager, channel, talkgroup, timestamp, false);
+    }
+
+    private static void grant(EDACSTrafficChannelManager manager, EDACSChannel channel, int talkgroup, long timestamp,
+                              boolean update)
+    {
         EDACSMessage message = new EDACSMessage(EDACSMessageType.DIGITAL_GROUP_CALL, new CorrectedBinaryMessage(40),
             timestamp);
+        message.setUpdate(update);
         IdentifierCollection ic = new IdentifierCollection(List.of(new EDACSTalkgroup(talkgroup, Role.TO)));
         manager.processChannelGrant(message, ic, channel);
     }
@@ -139,6 +148,49 @@ class EDACSTrafficChannelManagerTest
         grant(manager, channel, 530, start + 10000);
 
         assertEquals(2, events.size(), "a grant after the stale threshold should start a new event");
+    }
+
+    @Test
+    void updatesTrailingAChannelDropDoNotRestartTheChannel()
+    {
+        Set<IDecodeEvent> events = Collections.newSetFromMap(new IdentityHashMap<>());
+        EDACSTrafficChannelManager manager = manager(events);
+        FakeChannelProcessingManager cpm = new FakeChannelProcessingManager(manager, false);
+        EventBus bus = new EventBus();
+        bus.register(cpm);
+        manager.setInterModuleEventBus(bus);
+
+        EDACSChannel channel = lcn1();
+        long start = System.currentTimeMillis();
+        grant(manager, channel, 530, start);
+        manager.processTrafficVoice(FREQUENCY, start + 1000);
+
+        //The site drops the channel and the traffic channel is torn down
+        manager.processTrafficChannelDrop(FREQUENCY, start + 2000);
+        manager.getChannelEventListener().receive(new ChannelEvent(cpm.mLastChannel,
+            ChannelEvent.Event.NOTIFICATION_PROCESSING_STOP));
+
+        //Updates for the call that just ended are still arriving from the control channel
+        grant(manager, channel, 530, start + 2300, true);
+        grant(manager, channel, 530, start + 2900, true);
+        assertEquals(1, cpm.mStartRequests, "trailing updates should not start the traffic channel again");
+        assertEquals(1, events.size(), "trailing updates should not create another call event");
+
+        //An update for another talkgroup, or a new assignment, on that LCN is a call to follow
+        grant(manager, channel, 531, start + 3000, true);
+        assertEquals(2, cpm.mStartRequests, "an update for another talkgroup is a call in progress to join");
+
+        manager.processTrafficChannelDrop(FREQUENCY, start + 4000);
+        manager.getChannelEventListener().receive(new ChannelEvent(cpm.mLastChannel,
+            ChannelEvent.Event.NOTIFICATION_PROCESSING_STOP));
+        grant(manager, channel, 531, start + 4500, false);
+        assertEquals(3, cpm.mStartRequests, "a new assignment straight after a drop is a new call");
+
+        manager.processTrafficChannelDrop(FREQUENCY, start + 6000);
+        manager.getChannelEventListener().receive(new ChannelEvent(cpm.mLastChannel,
+            ChannelEvent.Event.NOTIFICATION_PROCESSING_STOP));
+        grant(manager, channel, 531, start + 9000, true);
+        assertEquals(4, cpm.mStartRequests, "an update long after the drop is a call in progress to join");
     }
 
     @Test

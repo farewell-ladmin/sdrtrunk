@@ -69,6 +69,12 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     private Map<EDACSChannel, Long> mLastGrantTimestampMap = new ConcurrentHashMap<>();
     private Map<EDACSChannel, Long> mLastGrantBroadcastTimestampMap = new ConcurrentHashMap<>();
     private Map<EDACSChannel, PendingChannelGrant> mPendingChannelGrantMap = new ConcurrentHashMap<>();
+    /**
+     * How long after the site drops a working channel an Update for the same LCN and talkgroup is ignored.  In the
+     * 2026-11-14 15:02 run the trailing Updates arrived within about a second of the drop.
+     */
+    private static final long CHANNEL_DROP_UPDATE_HOLDOFF_MS = 2000;
+    private Map<EDACSChannel, ChannelDrop> mChannelDropMap = new ConcurrentHashMap<>();
     private Set<EDACSChannel> mStaleCallSet = ConcurrentHashMap.newKeySet();
     private Set<EDACSChannel> mPendingTeardownSet = ConcurrentHashMap.newKeySet();
     private final TrafficChannelTeardownMonitor mTrafficChannelTeardownMonitor = new TrafficChannelTeardownMonitor();
@@ -105,6 +111,22 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
         if(edacsChannel == null || identifierCollection == null)
         {
             return;
+        }
+
+        //The control channel sends an Assignment for a new call and then Updates for as long as it runs, and the last
+        //Update or two arrive up to a second after the site has dropped the working channel.  Those are not a new
+        //call: ignore them, or the traffic channel is started again on a frequency that has gone quiet.
+        ChannelDrop drop = mChannelDropMap.get(edacsChannel);
+
+        if(drop != null)
+        {
+            if(message.isUpdate() && message.getTimestamp() - drop.timestamp() <= CHANNEL_DROP_UPDATE_HOLDOFF_MS &&
+                Objects.equals(drop.to(), getToIdentifier(identifierCollection)))
+            {
+                return;
+            }
+
+            mChannelDropMap.remove(edacsChannel);
         }
 
         DecodeEvent existingEvent = mChannelGrantEventMap.get(edacsChannel);
@@ -296,6 +318,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
         mLastGrantTimestampMap.clear();
         mLastGrantBroadcastTimestampMap.clear();
         mPendingChannelGrantMap.clear();
+        mChannelDropMap.clear();
         mStaleCallSet.clear();
         mPendingTeardownSet.clear();
     }
@@ -399,6 +422,28 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
         {
             if(entry.getKey().getDownlinkFrequency() == frequency)
             {
+                entry.getValue().end(timestamp);
+                broadcast(entry.getValue());
+                return;
+            }
+        }
+    }
+
+    /**
+     * Ends the call event for the traffic channel at the frequency when the site drops the channel (dotting after
+     * voice), and remembers the drop so that the Updates still arriving from the control channel for that call are
+     * not taken for a new one.
+     * @param frequency of the traffic channel
+     * @param timestamp of the channel drop
+     */
+    public synchronized void processTrafficChannelDrop(long frequency, long timestamp)
+    {
+        for(Map.Entry<EDACSChannel, DecodeEvent> entry : mChannelGrantEventMap.entrySet())
+        {
+            if(entry.getKey().getDownlinkFrequency() == frequency)
+            {
+                mChannelDropMap.put(entry.getKey(),
+                    new ChannelDrop(getToIdentifier(entry.getValue().getIdentifierCollection()), timestamp));
                 entry.getValue().end(timestamp);
                 broadcast(entry.getValue());
                 return;
@@ -567,6 +612,10 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             }
             return null;
         }
+    }
+
+    private record ChannelDrop(Identifier to, long timestamp)
+    {
     }
 
     private record PendingChannelGrant(EDACSMessage message, IdentifierCollection identifierCollection,

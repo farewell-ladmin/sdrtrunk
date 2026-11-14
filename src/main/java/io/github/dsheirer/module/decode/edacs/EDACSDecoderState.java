@@ -194,7 +194,7 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
 
         if(mTrafficChannelManager != null)
         {
-            mTrafficChannelManager.processTrafficCallEnd(getCurrentFrequency(), timestamp);
+            mTrafficChannelManager.processTrafficChannelDrop(getCurrentFrequency(), timestamp);
         }
 
         broadcast(new DecoderStateEvent(this, Event.END, State.FADE));
