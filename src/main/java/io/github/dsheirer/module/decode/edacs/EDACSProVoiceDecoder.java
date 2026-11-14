@@ -100,7 +100,6 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
     private int mFramesDecoded = 0;
     private int mDecodeErrors = 0;
     private int mSyncRejects = 0;
-    private long mLastStatsTime = 0;
 
     private double mSamplesPerSymbol = 5.0;
     private double mSampleAccum = 0;
@@ -260,13 +259,6 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
                 mFramePending = FRAME_BITS - SYNC_BITS;
             }
 
-            if(System.currentTimeMillis() - mLastStatsTime > 10000)
-            {
-                mLog.debug("EDACS ProVoice - detected: " + mFramesDetected +
-                        " decoded: " + mFramesDecoded +
-                        " errors: " + mDecodeErrors);
-                mLastStatsTime = System.currentTimeMillis();
-            }
         }
     }
 

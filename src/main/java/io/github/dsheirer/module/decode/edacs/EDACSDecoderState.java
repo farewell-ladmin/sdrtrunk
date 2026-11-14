@@ -24,7 +24,6 @@ import org.slf4j.LoggerFactory;
 public class EDACSDecoderState extends DecoderState implements IMessageListener
 {
     private final static Logger mLog = LoggerFactory.getLogger(EDACSDecoderState.class);
-    private static final int STATS_LOG_INTERVAL = 1000;
 
     private final EDACSTrafficChannelManager mTrafficChannelManager;
     private final ChannelType mChannelType;
@@ -99,14 +98,11 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
         {
             mBchErrors++;
             mTotalMessagesDecoded++;
-            logStatsIfDue();
             return;
         }
 
         mTotalMessagesDecoded++;
         EDACSMessageType type = edacs.getMessageType();
-
-        mLog.debug("EDACS RX: {}", edacs);
 
         switch(type)
         {
@@ -129,7 +125,6 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
                 break;
         }
 
-        logStatsIfDue();
     }
 
     private void processChannelGrant(EDACSMessage message)
@@ -147,17 +142,6 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
         ic.remove(IdentifierClass.USER);
         ic.update(message.getIdentifiers());
 
-        String mode = message.isDigital() ? "DIGITAL" : "ANALOG";
-        String callType = message.getMessageType() == EDACSMessageType.INDIVIDUAL_CALL ? "Private Call" :
-                message.getMessageType() == EDACSMessageType.ALL_CALL ? "All-Call" : "Group Grant";
-        long freq = edacsChannel.getDownlinkFrequency();
-        String freqStr = freq > 0 ? String.format("%.4f MHz", freq / 1e6) : "unknown freq";
-
-        mLog.debug("EDACS {} {} TG:0x{} Src:0x{} LCN:{} ({})", mode, callType,
-                Integer.toHexString(message.getGroup()),
-                Integer.toHexString(message.getSource()),
-                lcn, freqStr);
-
         if(mTrafficChannelManager != null)
         {
             mTrafficChannelManager.processChannelGrant(message, ic, edacsChannel);
@@ -173,7 +157,6 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
 
         if(mChannelType != ChannelType.TRAFFIC || !message.isValid())
         {
-            logStatsIfDue();
             return;
         }
 
@@ -193,7 +176,6 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
 
         broadcast(mCurrentTrafficEvent);
         broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
-        logStatsIfDue();
     }
 
     private void processSystemInfo(EDACSMessage message)
@@ -210,12 +192,12 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
         if(!mSystemIdDecoded && mSystemId != 0)
         {
             mSystemIdDecoded = true;
-            mLog.info("EDACS System ID decoded: 0x{}", Integer.toHexString(mSystemId));
+            mLog.debug("EDACS System ID decoded: 0x{}", Integer.toHexString(mSystemId));
         }
         if(!mCcLcnDecoded && mCcLcn != 0)
         {
             mCcLcnDecoded = true;
-            mLog.info("EDACS CC LCN decoded: {}", mCcLcn);
+            mLog.debug("EDACS CC LCN decoded: {}", mCcLcn);
         }
 
         broadcast(new DecoderStateEvent(this, Event.START, State.CONTROL));
@@ -229,22 +211,12 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
         if(!mSiteIdDecoded && mSiteId != 0)
         {
             mSiteIdDecoded = true;
-            mLog.info("EDACS Site ID decoded: 0x{} ({}), Area 0x{} ({})",
+            mLog.debug("EDACS Site ID decoded: 0x{} ({}), Area 0x{} ({})",
                     Integer.toHexString(mSiteId), mSiteId,
                     Integer.toHexString(mAreaCode), mAreaCode);
         }
 
         broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
-    }
-
-    private void logStatsIfDue()
-    {
-        if(mTotalMessagesDecoded > 0 && mTotalMessagesDecoded % STATS_LOG_INTERVAL == 0)
-        {
-            mLog.debug("EDACS stats: messages={} BCH_errors={} sys=0x{} site={} area={} ccLcn={}",
-                    mTotalMessagesDecoded, mBchErrors,
-                    Integer.toHexString(mSystemId), mSiteId, mAreaCode, mCcLcn);
-        }
     }
 
     @Override

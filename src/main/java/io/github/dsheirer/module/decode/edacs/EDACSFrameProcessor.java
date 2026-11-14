@@ -68,7 +68,6 @@ public class EDACSFrameProcessor
     private int mBchFails = 0;
     private int mOneWordBchRejects = 0;
     private int mSyncMatches = 0;
-    private long mLastStatsTime = 0;
 
     /**
      * Feeds a single demodulated bit to the frame processor. Bit value 1
@@ -101,15 +100,6 @@ public class EDACSFrameProcessor
             mDataBitCount = 0;
         }
 
-        if(System.currentTimeMillis() - mLastStatsTime > 10000)
-        {
-            mLog.debug("EDACS FrameProcessor - sync_matches: " + mSyncMatches +
-                    " detected: " + mFramesDetected +
-                    " decoded: " + mFramesDecoded +
-                    " BCH pass: " + mBchPasses + " fail: " + mBchFails +
-                    " one-word rejects: " + mOneWordBchRejects);
-            mLastStatsTime = System.currentTimeMillis();
-        }
     }
 
     /**

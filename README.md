@@ -107,10 +107,15 @@ Payload bits are inverted when an inverted-variant sync (`INV_PROVOICE_SYNC` /
 `INV_PROVOICE_EA_SYNC`) is matched, mirroring DSD-FME `digitize()` synctype 14
 ("+PV") vs 15 ("-PV") handling — without this the IMBE grids decode inverted and
 the audio is garbled. The 7100→4400 conversion and speech synthesis are handled
-by the JMBE `PROVOICE` codec. Audio fidelity on a clean recording is intelligible
-(listener-confirmed); live decode quality tracks signal strength, since the
-ProVoice symbol slicer is simpler than DSD-FME's (no matched filter), so weak
-signals produce more muted/repeat frames.
+by the JMBE `PROVOICE` codec. Audio from recorded calls is intelligible
+(listener-confirmed offline); the 3-tap matched-filter symbol slicer still needs
+confirming on a live system. Weak signals produce more muted/repeat frames.
+
+The `PROVOICE` codec is not in stock JMBE. Build the `provoice-on-v2` branch of
+[farewell-ladmin/jmbe](https://github.com/farewell-ladmin/jmbe) (JMBE 2.1.1 plus
+the ProVoice codec) and point the JMBE library preference at that jar. With a
+stock JMBE jar, sdrtrunk logs that the codec is unsupported and ProVoice calls
+are silent; P25 and other codecs are unaffected.
 
 ### ⚠️ Caveat: disable duplicate-call-detection-by-talkgroup for EDACS EA
 

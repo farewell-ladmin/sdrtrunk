@@ -128,7 +128,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         mIBasebandFilter = FilterFactory.getRealFilter(coefficients);
         mQBasebandFilter = FilterFactory.getRealFilter(coefficients);
 
-        mLog.info("EDACS decoder sample rate: " + mDecimatedRate + " (decimation: " + decimation + ") -> 48 kHz");
+        mLog.debug("EDACS decoder sample rate: " + mDecimatedRate + " (decimation: " + decimation + ") -> 48 kHz");
 
         mSyncDetector.setSampleRate(48000.0);
     }

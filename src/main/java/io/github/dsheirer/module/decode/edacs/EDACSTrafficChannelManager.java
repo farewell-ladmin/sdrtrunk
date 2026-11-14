@@ -176,13 +176,6 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             identifierCollection, this));
 
         broadcast(grantEvent);
-
-        mLog.debug("EDACS GRANT: TG/Target=0x{} Source=0x{} LCN={} Freq={} ({})",
-                Integer.toHexString(message.getGroup()),
-                Integer.toHexString(message.getSource()),
-                edacsChannel.getChannelNumber(),
-                edacsChannel.getDownlinkFrequency(),
-                message.isDigital() ? "Digital" : "Analog");
     }
 
     /**

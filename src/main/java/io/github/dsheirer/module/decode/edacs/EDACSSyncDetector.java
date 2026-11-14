@@ -53,7 +53,6 @@ public class EDACSSyncDetector
     private float mLastDeviation = 0f;
     private double mAfc = 0.0;
 
-    private long mLastStatsTime = 0;
 
     public void setSampleRate(double sampleRate)
     {
@@ -109,7 +108,7 @@ public class EDACSSyncDetector
                         if(!mLocked)
                         {
                             mLocked = true;
-                            mLog.info("EDACS control channel locked on phase " + phase);
+                            mLog.debug("EDACS control channel locked on phase " + phase);
                         }
 
                         messageListener.receive(message);
@@ -123,11 +122,11 @@ public class EDACSSyncDetector
                         if(!mLocked)
                         {
                             mLocked = true;
-                            mLog.info("EDACS control channel locked on phase " + phase);
+                            mLog.debug("EDACS control channel locked on phase " + phase);
                         }
                         else
                         {
-                            mLog.info("EDACS control channel reacquired on phase " + phase +
+                            mLog.debug("EDACS control channel reacquired on phase " + phase +
                                     " from stale phase " + previousPhase);
                         }
 
@@ -152,16 +151,6 @@ public class EDACSSyncDetector
                 mFrameProcessor.processBit(bit, messageListener);
             }
 
-            if(System.currentTimeMillis() - mLastStatsTime > 10000)
-            {
-                mLog.debug("EDACS Demod - afc: " + String.format("%.4f", mAfc) +
-                        " sps: " + String.format("%.2f", mSamplesPerSymbol) +
-                        " frames: " + getFrameProcessor().getFramesDecoded() +
-                        " bch_pass: " + getFrameProcessor().getBchPasses() +
-                        " bch_fail: " + getFrameProcessor().getBchFails() +
-                        " phase: " + mActivePhase);
-                mLastStatsTime = System.currentTimeMillis();
-            }
         }
     }
 
