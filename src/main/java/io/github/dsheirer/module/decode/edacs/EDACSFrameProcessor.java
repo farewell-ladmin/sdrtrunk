@@ -127,12 +127,8 @@ public class EDACSFrameProcessor
 
         if(data1 == null || data2 == null)
         {
-            if(data1 != null || data2 != null)
-            {
-            }
             return;
         }
-
 
         EDACSMessage message = EDACSMessageFactory.create(data1, data2, System.currentTimeMillis());
 

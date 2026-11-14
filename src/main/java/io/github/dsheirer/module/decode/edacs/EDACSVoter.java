@@ -63,7 +63,7 @@ public class EDACSVoter
         return message;
     }
 
-    private static long encode(long message)
+    static long encode(long message)
     {
         int[] data = new int[DATA_BITS];
         int[] parity = new int[PARITY_BITS];
