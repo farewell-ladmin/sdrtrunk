@@ -156,11 +156,15 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
 
     private float mLastSample = 0f;
     private float mLastDeviation = 0f;
-    private float mDeviationPrev1 = 0f;
-    private float mDeviationPrev2 = 0f;
+    private final float[] mSymbolWindow = new float[PHASES];
     private double mAfc = 0.0;
 
-    private static final double AFC_ALPHA = 0.05;
+    /**
+     * DC (carrier offset) tracker rate, the same as EDACSSyncDetector.  It has to be slow against the bit rate: at
+     * the previous 0.05 it followed the data, so a run of 4 or more equal bits decayed toward the slicing threshold
+     * and marker bit errors on the 2026-11-14 traffic recordings were 2.27% against 0.39% at this value.
+     */
+    private static final double AFC_ALPHA = 0.001;
     private static final float AFC_MAX = 2.0f;
 
     private IDemodulator mFMDemodulator = FmDemodulatorFactory.getFmDemodulator();
@@ -170,8 +174,9 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
     private IRealDecimationFilter mQDecimationFilter;
     private double mDecimatedRate = 48000.0;
     private float[] mResampleBuffer = new float[0];
-    private double mResamplePhase = 0;
-    private boolean mResampleReady = false;
+    private double mResampleCursor = 0;
+    private float mLastResampleInput = 0;
+    private boolean mHasLastResampleInput = false;
     private final SourceEventProcessor mSourceEventProcessor = new SourceEventProcessor();
     private final MutableIdentifierCollection mIdentifierCollection = new MutableIdentifierCollection();
     private final IdentifierUpdateProcessor mIdentifierUpdateProcessor = new IdentifierUpdateProcessor();
@@ -267,7 +272,12 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
         mQDecimationFilter = DecimationFilterFactory.getRealDecimationFilter(decimation);
         mDecimatedRate = sampleRate / decimation;
 
-        float[] coefficients = FilterFactory.getLowPass(mDecimatedRate, 9600, 12000, 60,
+        //Filter ahead of the FM demodulator.  98% of the ProVoice signal power is within 6 kHz of the carrier, and
+        //noise let in beyond that costs frames on the weaker overs.  Voice frames decoded from the 2026-11-14
+        //baseband recordings by pass/stop frequency: 9600/12000 (previous) 3656, 7000/9000 3713, 6000/8000 3770,
+        //5000/7000 3757, 4000/6000 397.  The cliff is close below, so a tuner more than about 1 kHz off frequency
+        //(1.2 ppm at 850 MHz) will lose frames with this filter and needs its PPM correcting.
+        float[] coefficients = FilterFactory.getLowPass(mDecimatedRate, 6000, 8000, 60,
                 io.github.dsheirer.dsp.window.WindowType.HAMMING, true);
 
         mIBasebandFilter = FilterFactory.getRealFilter(coefficients);
@@ -287,21 +297,18 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             float dev = sample - (float)mAfc;
             mLastSample = sample;
             mLastDeviation = dev;
-            // Slice on a short trailing 3-tap average of the FM deviation rather
-            // than a single instantaneous sample. The symbol-sampling instant
-            // (the accumulator crossing) is the well-aligned phase point that
-            // sync locks to; averaging it with the two preceding samples (still
-            // inside the same 5-sample symbol) reduces per-sample noise that
-            // otherwise flips marginal bits, without the symbol-straddle that a
-            // full-window boxcar suffers from at an arbitrary window phase.
-            float smoothedDeviation = dev + mDeviationPrev1 + mDeviationPrev2;
-            mDeviationPrev2 = mDeviationPrev1;
-            mDeviationPrev1 = dev;
-
             //Each sample is the next bit for one of the 5 phase framers
             int phase = mPhase;
             mPhase = (mPhase + 1) % PHASES;
             mSampleCount++;
+
+            //Slice on the sum of the last 5 samples, one whole symbol.  The framer on the phase where that window
+            //lines up with the symbol has the widest eye and is the one whose frames are sent.  Measured on the
+            //2026-11-14 traffic recordings, with the same DC tracker: 1 sample 0.55% marker bit errors, 3 samples
+            //0.39%, 5 samples 0.23%.
+            mSymbolWindow[phase] = dev;
+            float smoothedDeviation = mSymbolWindow[0] + mSymbolWindow[1] + mSymbolWindow[2] + mSymbolWindow[3] +
+                mSymbolWindow[4];
 
             //Report the end of the over (as the P25 framer reports sync loss) when frames stop arriving.  Counted
             //once per symbol.
@@ -657,30 +664,40 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
 
     private float[] resample(float[] input, double inputRate, double outputRate)
     {
-        double step = outputRate / inputRate;
-        int estimateLen = (int)(input.length * step) + 2;
+        //Linear interpolation, the same as EDACSDecoder uses for the control channel.  This previously dropped or
+        //repeated whole samples, which moved the symbol timing by up to a fifth of a symbol at each one.
+        if(input.length == 0)
+        {
+            return input;
+        }
+
+        if(!mHasLastResampleInput)
+        {
+            mLastResampleInput = input[0];
+            mHasLastResampleInput = true;
+            mResampleCursor = 1.0;
+        }
+
+        double step = inputRate / outputRate;
+        int estimateLen = (int)(input.length / step) + 2;
         if(mResampleBuffer.length < estimateLen)
         {
             mResampleBuffer = new float[estimateLen];
         }
 
         int outIdx = 0;
-        for(float sample : input)
+        while(mResampleCursor < input.length)
         {
-            mResamplePhase += step;
-            while(mResamplePhase >= 1.0)
-            {
-                mResamplePhase -= 1.0;
-                if(mResampleReady && outIdx < mResampleBuffer.length)
-                {
-                    mResampleBuffer[outIdx++] = sample;
-                }
-                else
-                {
-                    mResampleReady = true;
-                }
-            }
+            int index = (int)mResampleCursor;
+            double fraction = mResampleCursor - index;
+            float previous = index == 0 ? mLastResampleInput : input[index - 1];
+            float current = input[index];
+            mResampleBuffer[outIdx++] = (float)(previous + (current - previous) * fraction);
+            mResampleCursor += step;
         }
+
+        mResampleCursor -= input.length;
+        mLastResampleInput = input[input.length - 1];
 
         float[] result = new float[outIdx];
         System.arraycopy(mResampleBuffer, 0, result, 0, outIdx);
@@ -694,8 +711,8 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
         {
             if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_SAMPLE_RATE_CHANGE)
             {
-                mResamplePhase = 0;
-                mResampleReady = false;
+                mResampleCursor = 0;
+                mHasLastResampleInput = false;
                 setSourceSampleRate(sourceEvent.getValue().doubleValue());
             }
         }
