@@ -358,6 +358,11 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                 {
                     broadcast(new ChannelEvent(trafficChannel, ChannelEvent.Event.REQUEST_DISABLE));
                 }
+                else
+                {
+                    //No traffic channel (start was rejected) - nothing to stop, so drop the call state
+                    clearChannelState(edacsChannel);
+                }
             }
         }
     }
@@ -471,10 +476,12 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                         {
                             mAllocatedTrafficChannelMap.remove(rejected);
                             PendingChannelGrant pendingGrant = mPendingChannelGrantMap.remove(rejected);
-                            clearCompletedChannelState(rejected);
                             offerAvailableTrafficChannel(channel);
 
-                            DecodeEvent event = mChannelGrantEventMap.remove(rejected);
+                            //Leave the event and grant timestamps in place (as P25TrafficChannelManager does) so
+                            //repeated grants for this call update the event instead of recreating it.  The stale
+                            //call check ends the event.
+                            DecodeEvent event = mChannelGrantEventMap.get(rejected);
 
                             if(event != null)
                             {
