@@ -117,6 +117,37 @@ the ProVoice codec) and point the JMBE library preference at that jar. With a
 stock JMBE jar, sdrtrunk logs that the codec is unsupported and ProVoice calls
 are silent; P25 and other codecs are unaffected.
 
+### ProVoice voice marker
+
+Every ProVoice voice frame carries a fixed 16-bit marker in the middle of the
+frame. Each over also starts with a short signalling burst and ends with dotting,
+and both follow the same sync word as voice. Played through the vocoder they sound
+as a digital burst at each end of the over. sdrtrunk plays a frame only when its
+marker matches the **ProVoice Voice Marker (hex)** setting in the EDACS channel's
+decoder settings, allowing up to 3 wrong bits.
+
+The default is `2175`, which is what the MBTA system uses and what DSD-FME
+`provoice.c` calls the usual value. It has only been checked on that one system.
+If ProVoice calls on another system show in Now Playing but are silent, the marker
+is the first thing to check:
+
+1. Clear the marker field and save. With no marker every frame is played, bursts
+   included, so you can confirm the audio itself decodes.
+2. Start the channel and wait for a call. Select the traffic channel row in Now
+   Playing and open its **Messages** tab. Each frame shows as
+   `PROVOICE VOICE MARKER:xxxx LID:xxxx ...`.
+3. The marker is the `MARKER` value that repeats through the body of an over. Expect
+   an odd bit to differ on a noisy signal (`2175`, `2375`, `6175`), so take the
+   value seen most often. Ignore the first few frames of an over, which are the
+   signalling burst (on MBTA they read `AA55`), and the last one.
+4. Enter that value in the marker field and save. Frames without it now show as
+   `PROVOICE SIGNALLING` and are not played.
+
+DSD-FME shows the same value: run it with payload output on a ProVoice call and
+read the `BF:` line it prints for each frame.
+
+This check is not in DSD-FME, which plays every frame.
+
 ### Control channel rotation
 
 EDACS sites can move the control channel to another LCN, and the one listed on

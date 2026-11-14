@@ -14,8 +14,9 @@ import java.util.List;
  */
 public class EDACSProVoiceMessage implements IMessage
 {
-    private static final int VOICE_MARKER = 0x2175;
+    private static final int DEFAULT_VOICE_MARKER = 0x2175;
     private static final int VOICE_MARKER_MAXIMUM_BIT_ERRORS = 3;
+    private final int mVoiceMarker;
 
     private final byte[][] mImbeFrames = new byte[4][];
     private final int[][][] mImbeGrids;
@@ -31,13 +32,18 @@ public class EDACSProVoiceMessage implements IMessage
                                 String syncPattern, long timestamp)
     {
         this(imbeFrame1, imbeFrame2, imbeFrame3, imbeFrame4, imbeGrids, frameBits, lid, bfMarker, syncPattern,
-                timestamp, Collections.emptyList());
+                timestamp, Collections.emptyList(), DEFAULT_VOICE_MARKER);
     }
 
+    /**
+     * Constructs an instance
+     * @param voiceMarker that voice frames carry on this system, or a negative value to treat every frame as voice.
+     */
     public EDACSProVoiceMessage(byte[] imbeFrame1, byte[] imbeFrame2, byte[] imbeFrame3, byte[] imbeFrame4,
                                 int[][][] imbeGrids, boolean[] frameBits, int lid, int bfMarker,
-                                String syncPattern, long timestamp, List<Identifier> identifiers)
+                                String syncPattern, long timestamp, List<Identifier> identifiers, int voiceMarker)
     {
+        mVoiceMarker = voiceMarker;
         mImbeFrames[0] = imbeFrame1;
         mImbeFrames[1] = imbeFrame2;
         mImbeFrames[2] = imbeFrame3;
@@ -131,11 +137,23 @@ public class EDACSProVoiceMessage implements IMessage
      * Indicates if this frame carries voice.  A voice frame has a fixed 16-bit marker between the first halves of
      * IMBE frames 1,2 and 3,4 (DSD-FME provoice.c: "usually 2175").  The signalling burst that starts an over and
      * the dotting that ends it also follow a sync word, but do not carry the marker, and sound as a burst of noise
-     * if they are passed to the vocoder.  This check is not in DSD-FME.
+     * if they are passed to the vocoder.  This check is not in DSD-FME.  The marker is set per system in the EDACS
+     * decode configuration; every frame is voice when no marker is configured.
      */
     public boolean isVoice()
     {
-        return Integer.bitCount(mBfMarker ^ VOICE_MARKER) <= VOICE_MARKER_MAXIMUM_BIT_ERRORS;
+        return mVoiceMarker < 0 || Integer.bitCount(mBfMarker ^ mVoiceMarker) <= VOICE_MARKER_MAXIMUM_BIT_ERRORS;
+    }
+
+    /**
+     * Shown in the Messages tab and the decoded messages log.  The MARKER value is what to enter as the ProVoice
+     * voice marker for a system: it is the value that repeats through the middle of each over.
+     */
+    @Override
+    public String toString()
+    {
+        return String.format("PROVOICE %s MARKER:%04X LID:%04X %s", isVoice() ? "VOICE" : "SIGNALLING", mBfMarker,
+            mLid, mSyncPattern);
     }
 
     @Override

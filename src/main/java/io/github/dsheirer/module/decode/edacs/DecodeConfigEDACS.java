@@ -27,6 +27,13 @@ public class DecodeConfigEDACS extends DecodeConfiguration
     private VoiceMode mVoiceMode = VoiceMode.ANALOG;
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT_EDACS;
 
+    /** ProVoice voice frame marker seen on the MBTA system and named as usual in DSD-FME provoice.c */
+    public static final String PROVOICE_VOICE_MARKER_DEFAULT = "2175";
+
+    /** Value of the voice marker when frames are not checked for it */
+    public static final int PROVOICE_VOICE_MARKER_NONE = -1;
+    private String mProVoiceVoiceMarker = PROVOICE_VOICE_MARKER_DEFAULT;
+
     public enum VoiceMode
     {
         /** Analog FM only (NBFM) */
@@ -152,6 +159,41 @@ public class DecodeConfigEDACS extends DecodeConfiguration
     public void setTrafficChannelPoolSize(int size)
     {
         mTrafficChannelPoolSize = Math.max(0, size);
+    }
+
+    /**
+     * The 16-bit marker, as 4 hex digits, that every ProVoice voice frame on this system carries.  Frames without it
+     * (the signalling at the start and end of each over) are not treated as voice.  Empty to treat every frame as
+     * voice.
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "provoice_voice_marker")
+    public String getProVoiceVoiceMarker()
+    {
+        return mProVoiceVoiceMarker;
+    }
+
+    /**
+     * Sets the voice marker.  A value that is not 1-4 hex digits is stored as empty (no check).  A null value, as
+     * when loading a playlist saved before this setting existed, leaves the default in place.
+     */
+    public void setProVoiceVoiceMarker(String marker)
+    {
+        if(marker == null)
+        {
+            return;
+        }
+
+        String trimmed = marker.trim().toUpperCase();
+        mProVoiceVoiceMarker = trimmed.matches("[0-9A-F]{1,4}") ? trimmed : "";
+    }
+
+    /**
+     * Voice marker as a number, or PROVOICE_VOICE_MARKER_NONE when frames are not to be checked.
+     */
+    @JsonIgnore
+    public int getProVoiceVoiceMarkerValue()
+    {
+        return mProVoiceVoiceMarker.isEmpty() ? PROVOICE_VOICE_MARKER_NONE : Integer.parseInt(mProVoiceVoiceMarker, 16);
     }
 
     @JsonIgnore

@@ -165,6 +165,25 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
     private final MutableIdentifierCollection mIdentifierCollection = new MutableIdentifierCollection();
     private final IdentifierUpdateProcessor mIdentifierUpdateProcessor = new IdentifierUpdateProcessor();
     private Listener<float[]> mDemodulatedBufferListener;
+    private final int mVoiceMarker;
+
+    /**
+     * Constructs an instance
+     * @param voiceMarker that voice frames carry on this system, or DecodeConfigEDACS.PROVOICE_VOICE_MARKER_NONE to
+     * treat every frame as voice.
+     */
+    public EDACSProVoiceDecoder(int voiceMarker)
+    {
+        mVoiceMarker = voiceMarker;
+    }
+
+    /**
+     * Constructs an instance that uses the default voice marker.
+     */
+    public EDACSProVoiceDecoder()
+    {
+        this(Integer.parseInt(DecodeConfigEDACS.PROVOICE_VOICE_MARKER_DEFAULT, 16));
+    }
 
     @Override
     public DecoderType getDecoderType()
@@ -377,7 +396,7 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
 
         EDACSProVoiceMessage message = new EDACSProVoiceMessage(imbe1, imbe2, imbe3, imbe4,
                 new int[][][] { grid1, grid2, grid3, grid4 }, frameBits, lid, bfMarker, syncPattern,
-                System.currentTimeMillis(), mIdentifierCollection.getIdentifiers());
+                System.currentTimeMillis(), mIdentifierCollection.getIdentifiers(), mVoiceMarker);
 
         if(mCandidate == null)
         {

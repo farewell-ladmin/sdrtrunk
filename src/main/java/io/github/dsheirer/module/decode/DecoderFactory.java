@@ -544,14 +544,16 @@ public class DecoderFactory
         if(channel.isTrafficChannel())
         {
             boolean proVoice = false;
+            int voiceMarker = Integer.parseInt(DecodeConfigEDACS.PROVOICE_VOICE_MARKER_DEFAULT, 16);
             if(decodeConfig instanceof DecodeConfigEDACS edacsConfig)
             {
                 proVoice = edacsConfig.getVoiceMode() == DecodeConfigEDACS.VoiceMode.PROVOICE;
+                voiceMarker = edacsConfig.getProVoiceVoiceMarkerValue();
             }
             if(proVoice)
             {
                 // Digital traffic channel: ProVoice frame sync + IMBE 7100 audio via JMBE.
-                modules.add(new EDACSProVoiceDecoder());
+                modules.add(new EDACSProVoiceDecoder(voiceMarker));
                 EDACSDecoderState decoderState = new EDACSDecoderState(channel,
                     trafficChannelManager instanceof EDACSTrafficChannelManager edacs ? edacs : null);
                 decoderState.setCurrentChannel(channelDescriptor);
@@ -1062,6 +1064,7 @@ public class DecoderFactory
                     copyEDACS.setLcnFrequencies(originalEDACS.getLcnFrequencies());
                     copyEDACS.setVoiceMode(originalEDACS.getVoiceMode());
                     copyEDACS.setTrafficChannelPoolSize(originalEDACS.getTrafficChannelPoolSize());
+                    copyEDACS.setProVoiceVoiceMarker(originalEDACS.getProVoiceVoiceMarker());
                     return copyEDACS;
                 case MOTOROLA_TYPE_II:
                     DecodeConfigMotorolaTypeII originalMoto = (DecodeConfigMotorolaTypeII)config;

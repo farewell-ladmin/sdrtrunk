@@ -245,6 +245,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
         {
             config.setLcnFrequencies(mDecodeConfig.getLcnFrequencies());
             config.setVoiceMode(mDecodeConfig.resolveVoiceMode(message.isDigital()));
+            config.setProVoiceVoiceMarker(mDecodeConfig.getProVoiceVoiceMarker());
         }
         else
         {
