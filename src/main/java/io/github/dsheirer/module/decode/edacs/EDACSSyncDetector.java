@@ -29,8 +29,14 @@ public class EDACSSyncDetector
     /** EDACS control channels are resampled to 48 kHz, or 5 samples/symbol. */
     private static final int PHASE_CANDIDATES = 5;
 
-    /** Reacquire quickly when the active phase stops producing valid frames. */
-    private static final long PHASE_STALE_SAMPLES = 48000L;
+    /**
+     * Samples after a frame during which only the phase that sent it may send again.  Longer than the 5 samples
+     * within which the other phases decode the same frame, far shorter than the 1440 samples between frames, so the
+     * phase is in effect chosen again for every frame.  This was 1 second: a phase that had drifted to marginal but
+     * still decoded something each second was never replaced, which held the 2026-11-14 recordings at 14 to 26
+     * messages per second where they now replay at 31 to 33.
+     */
+    private static final long PHASE_STALE_SAMPLES = 100L;
 
     /** AFC exponential moving average alpha. Slow enough to avoid tracking symbol data. */
     private static final double AFC_ALPHA = 0.001;
@@ -101,21 +107,11 @@ public class EDACSSyncDetector
                         return;
                     }
 
-                    if(phase == mActivePhase)
+                    //Send each frame once, from whichever phase decodes it first.  The phases that decode the same
+                    //frame finish within 5 samples of each other, so anything from another phase that soon after
+                    //is the same frame again.
+                    if(phase == mActivePhase || isActivePhaseStale())
                     {
-                        mLastActiveDecodeSampleIndex = mSampleIndex;
-
-                        if(!mLocked)
-                        {
-                            mLocked = true;
-                            mLog.debug("EDACS control channel locked on phase " + phase);
-                        }
-
-                        messageListener.receive(message);
-                    }
-                    else if(isActivePhaseStale())
-                    {
-                        int previousPhase = mActivePhase;
                         mActivePhase = phase;
                         mLastActiveDecodeSampleIndex = mSampleIndex;
 
@@ -123,11 +119,6 @@ public class EDACSSyncDetector
                         {
                             mLocked = true;
                             mLog.debug("EDACS control channel locked on phase " + phase);
-                        }
-                        else
-                        {
-                            mLog.debug("EDACS control channel reacquired on phase " + phase +
-                                    " from stale phase " + previousPhase);
                         }
 
                         messageListener.receive(message);

@@ -119,10 +119,10 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         mDecimatedRate = sampleRate / decimation;
 
-        // DSD-FME rtl_fm uses BW:24 -> 12 kHz LPF. EDACS channel width
-        // is 25 kHz; symbol rate 9600 baud so 9.6 kHz pass / 12 kHz stop
-        // is appropriate.
-        float[] coefficients = FilterFactory.getLowPass(mDecimatedRate, 9600, 12000, 60,
+        // 98% of the EDACS signal power is within 6 kHz of the carrier.  The previous 9.6 kHz pass / 12 kHz stop
+        // (after DSD-FME rtl_fm BW:24) let in noise that cost control channel messages; see the same filter in
+        // EDACSProVoiceDecoder for the measurements and the tuner frequency error this tolerates.
+        float[] coefficients = FilterFactory.getLowPass(mDecimatedRate, 6000, 8000, 60,
                 io.github.dsheirer.dsp.window.WindowType.HAMMING, true);
 
         mIBasebandFilter = FilterFactory.getRealFilter(coefficients);
