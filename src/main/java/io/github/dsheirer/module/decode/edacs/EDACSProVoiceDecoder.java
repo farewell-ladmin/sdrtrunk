@@ -81,6 +81,24 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
     };
 
     /**
+     * Bit errors allowed in the 32-bit sync word.  With an exact match, a single wrong sync bit discards a whole
+     * 80 ms voice frame whose payload the vocoder's error correction could have used.
+     */
+    private static final int SYNC_MAXIMUM_BIT_ERRORS = 2;
+    private static final boolean[][] SYNC_PATTERN_BITS = new boolean[PROVOICE_SYNC_PATTERNS.length][SYNC_BITS];
+
+    static
+    {
+        for(int pattern = 0; pattern < PROVOICE_SYNC_PATTERNS.length; pattern++)
+        {
+            for(int x = 0; x < SYNC_BITS; x++)
+            {
+                SYNC_PATTERN_BITS[pattern][x] = PROVOICE_SYNC_PATTERNS[pattern].charAt(x) == '3';
+            }
+        }
+    }
+
+    /**
      * ProVoice has no end-of-transmission terminator in the decoded stream, so the end of an over is detected as
      * missing frames.  5 frames (~400 ms) is shorter than the typical gap between message-trunked overs.
      */
@@ -579,20 +597,14 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
 
     private String getSyncPattern()
     {
-        // The four sync patterns form two inverse pairs (0/1 standard, 2/3 EA),
-        // so every received polarity matches exactly one pattern non-inverted;
-        // checking the inverted forms would only re-detect the pair partner.
-        for(int x = 0; x < PROVOICE_SYNC_PATTERNS.length; x++)
+        mSyncIndex = findSync(mFrameBitCount - FRAME_BITS);
+
+        if(mSyncIndex < 0)
         {
-            if(matchesSync(PROVOICE_SYNC_PATTERNS[x], false))
-            {
-                mSyncIndex = x;
-                return "SYNC" + x + (needsInversion(x) ? "_INVERTED" : "");
-            }
+            return null;
         }
 
-        mSyncIndex = -1;
-        return null;
+        return "SYNC" + mSyncIndex + (needsInversion(mSyncIndex) ? "_INVERTED" : "");
     }
 
     /**
@@ -605,63 +617,43 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
         return syncIndex == 1 || syncIndex == 3;
     }
 
-    private boolean matchesSync(String pattern, boolean invert)
-    {
-        for(int x = 0; x < SYNC_BITS; x++)
-        {
-            boolean expected = pattern.charAt(x) == '3';
-
-            if(invert)
-            {
-                expected = !expected;
-            }
-
-            if(readFrameBit(x) != expected)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     private boolean hasSyncAtCurrentBit()
     {
-        if(mFrameBitCount < SYNC_BITS)
-        {
-            return false;
-        }
-
-        for(String pattern : PROVOICE_SYNC_PATTERNS)
-        {
-            if(matchesTrailingSync(pattern, false) || matchesTrailingSync(pattern, true))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return mFrameBitCount >= SYNC_BITS && findSync(mFrameBitCount - SYNC_BITS) >= 0;
     }
 
-    private boolean matchesTrailingSync(String pattern, boolean invert)
+    /**
+     * Finds the sync pattern that matches the 32 bits starting at the bit count with the fewest bit errors.  The four
+     * patterns are two inverse pairs (0/1 standard, 2/3 EA) that differ from each other in at least 11 bits, so a
+     * match within SYNC_MAXIMUM_BIT_ERRORS is unambiguous.
+     * @param start bit count of the first sync bit
+     * @return index of the pattern, or -1 if none matches within the limit
+     */
+    private int findSync(int start)
     {
-        int start = mFrameBitCount - SYNC_BITS;
-        for(int x = 0; x < SYNC_BITS; x++)
-        {
-            boolean expected = pattern.charAt(x) == '3';
+        int best = -1;
+        int bestErrors = SYNC_MAXIMUM_BIT_ERRORS + 1;
 
-            if(invert)
+        for(int pattern = 0; pattern < SYNC_PATTERN_BITS.length; pattern++)
+        {
+            int errors = 0;
+
+            for(int x = 0; x < SYNC_BITS && errors < bestErrors; x++)
             {
-                expected = !expected;
+                if(mFrameBits[(start + x) % mFrameBits.length] != SYNC_PATTERN_BITS[pattern][x])
+                {
+                    errors++;
+                }
             }
 
-            if(mFrameBits[(start + x) % mFrameBits.length] != expected)
+            if(errors < bestErrors)
             {
-                return false;
+                bestErrors = errors;
+                best = pattern;
             }
         }
 
-        return true;
+        return best;
     }
 
     public int getFramesDetected() { return mFramesDetected; }
