@@ -106,13 +106,43 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
 
     private boolean[] mFrameBits = new boolean[FRAME_BITS + 80];
 
+    /**
+     * The traffic channel is resampled to 48 kHz, or 5 samples/symbol.  A traffic channel starts on an arbitrary
+     * sample and the symbol clock can drift during an over, so (as EDACSSyncDetector does for the control channel)
+     * a framer runs on each of the 5 sample phases.  mFrameBits, mFrameBitCount and mFramePending are the state of
+     * the phase currently being processed, swapped in and out of these arrays for each sample.
+     */
+    private static final int PHASES = 5;
+    private final boolean[][] mPhaseFrameBits = new boolean[PHASES][FRAME_BITS + 80];
+    private final int[] mPhaseFrameBitCount = new int[PHASES];
+    private final int[] mPhaseFramePending = new int[PHASES];
+
+    /** Sum of the absolute deviation at each bit of the frame in progress: largest at the centre of the symbol. */
+    private final float[] mPhaseEye = new float[PHASES];
+    private int mPhase = 0;
+
+    /**
+     * Phases near the symbol centre all decode the same frame within 5 samples of each other.  The frame from the
+     * phase with the widest eye is held here until the other phases have had their turn, then sent once.
+     */
+    private EDACSProVoiceMessage mCandidate;
+    private float mCandidateEye;
+    private int mCandidateSamplesRemaining;
+
+    /**
+     * A single framer does not look for sync while it is reading a frame (as DSD-FME processProVoice), so frames
+     * are never closer together than this.  With 5 framers the same limit is applied across all of them, otherwise
+     * an idle phase picks up the extra sync words in the burst that precedes the voice frames of each over.
+     */
+    private static final int MINIMUM_FRAME_SPACING_SAMPLES = (FRAME_BITS - SYNC_BITS) * PHASES;
+    private long mSampleCount = 0;
+    private long mLastFrameSample = -MINIMUM_FRAME_SPACING_SAMPLES;
+
     private int mFramesDetected = 0;
     private int mFramesDecoded = 0;
     private int mDecodeErrors = 0;
     private int mSyncRejects = 0;
 
-    private double mSamplesPerSymbol = 5.0;
-    private double mSampleAccum = 0;
     private float mLastSample = 0f;
     private float mLastDeviation = 0f;
     private float mDeviationPrev1 = 0f;
@@ -195,12 +225,6 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
         mDemodulatedBufferListener = null;
     }
 
-    public void setSampleRate(double sampleRate)
-    {
-        mSamplesPerSymbol = sampleRate / 9600.0;
-        mSampleAccum = 0;
-    }
-
     private void setSourceSampleRate(double sampleRate)
     {
         int decimation = 1;
@@ -218,7 +242,6 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
 
         mIBasebandFilter = FilterFactory.getRealFilter(coefficients);
         mQBasebandFilter = FilterFactory.getRealFilter(coefficients);
-        setSampleRate(48000.0);
         mLog.debug("EDACS ProVoice decoder sample rate: " + mDecimatedRate +
                 " (decimation: " + decimation + ") -> 48 kHz");
     }
@@ -244,19 +267,15 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             float smoothedDeviation = dev + mDeviationPrev1 + mDeviationPrev2;
             mDeviationPrev2 = mDeviationPrev1;
             mDeviationPrev1 = dev;
-            mSampleAccum += 1.0;
-            if(mSampleAccum < mSamplesPerSymbol)
-            {
-                continue;
-            }
-            mSampleAccum -= mSamplesPerSymbol;
 
-            boolean bit = smoothedDeviation >= 0;
-            mFrameBits[mFrameBitCount % mFrameBits.length] = bit;
-            mFrameBitCount++;
+            //Each sample is the next bit for one of the 5 phase framers
+            int phase = mPhase;
+            mPhase = (mPhase + 1) % PHASES;
+            mSampleCount++;
 
-            //Report the end of the over (as the P25 framer reports sync loss) when frames stop arriving
-            if(mFrameSyncActive && ++mBitsSinceFrame >= SYNC_LOSS_BITS)
+            //Report the end of the over (as the P25 framer reports sync loss) when frames stop arriving.  Counted
+            //once per symbol.
+            if(phase == 0 && mFrameSyncActive && ++mBitsSinceFrame >= SYNC_LOSS_BITS)
             {
                 mFrameSyncActive = false;
 
@@ -267,26 +286,62 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
                 }
             }
 
+            mFrameBits = mPhaseFrameBits[phase];
+            mFrameBitCount = mPhaseFrameBitCount[phase];
+            mFramePending = mPhaseFramePending[phase];
+
+            boolean bit = smoothedDeviation >= 0;
+            mFrameBits[mFrameBitCount % mFrameBits.length] = bit;
+            mFrameBitCount++;
+            mPhaseEye[phase] += Math.abs(smoothedDeviation);
+
             if(mFramePending > 0)
             {
                 mFramePending--;
                 if(mFramePending == 0)
                 {
-                    decodeFrame(messageListener);
+                    decodeFrame(phase);
                 }
             }
 
             if(mFramePending <= 0 && hasSyncAtCurrentBit())
             {
                 mFramePending = FRAME_BITS - SYNC_BITS;
+                mPhaseEye[phase] = 0f;
             }
 
+            mPhaseFrameBitCount[phase] = mFrameBitCount;
+            mPhaseFramePending[phase] = mFramePending;
+
+            if(mCandidate != null && --mCandidateSamplesRemaining <= 0)
+            {
+                EDACSProVoiceMessage message = mCandidate;
+                mCandidate = null;
+                mLastFrameSample = mSampleCount;
+                mFramesDecoded++;
+                mFrameSyncActive = true;
+                mBitsSinceFrame = 0;
+
+                if(messageListener != null)
+                {
+                    messageListener.receive(message);
+                }
+            }
         }
     }
 
-    private void decodeFrame(Listener<IMessage> messageListener)
+    /**
+     * Decodes the frame that just completed on the specified phase and keeps it as the candidate to send if no
+     * other phase has offered the same frame with a wider eye.
+     */
+    private void decodeFrame(int phase)
     {
         mFramesDetected++;
+
+        if(mCandidate == null && mSampleCount - mLastFrameSample < MINIMUM_FRAME_SPACING_SAMPLES)
+        {
+            return;
+        }
 
         if(mFrameBitCount < FRAME_BITS)
         {
@@ -323,12 +378,17 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
         EDACSProVoiceMessage message = new EDACSProVoiceMessage(imbe1, imbe2, imbe3, imbe4,
                 new int[][][] { grid1, grid2, grid3, grid4 }, frameBits, lid, bfMarker, syncPattern,
                 System.currentTimeMillis(), mIdentifierCollection.getIdentifiers());
-        mFramesDecoded++;
-        mFrameSyncActive = true;
-        mBitsSinceFrame = 0;
-        if(messageListener != null)
+
+        if(mCandidate == null)
         {
-            messageListener.receive(message);
+            mCandidate = message;
+            mCandidateEye = mPhaseEye[phase];
+            mCandidateSamplesRemaining = PHASES;
+        }
+        else if(mPhaseEye[phase] > mCandidateEye)
+        {
+            mCandidate = message;
+            mCandidateEye = mPhaseEye[phase];
         }
     }
 
