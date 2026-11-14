@@ -54,6 +54,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
     public static final String CHANNEL_START_REJECTED = "CHANNEL START REJECTED";
     public static final String MAX_TRAFFIC_CHANNELS_EXCEEDED = "MAX TRAFFIC CHANNELS EXCEEDED";
     private static final long CALL_STALE_MS = 3000;
+    private static final long STALE_EVENT_THRESHOLD_MS = 3000; //Same as ChannelEventTracker
     private static final long CALL_TEARDOWN_MS = 5000;
     private static final long CALL_UPDATE_BROADCAST_INTERVAL_MS = 1000;
 
@@ -110,7 +111,8 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
 
         if(existingEvent != null)
         {
-            if(isSameTalkgroup(identifierCollection, existingEvent.getIdentifierCollection()))
+            if(isSameTalkgroup(identifierCollection, existingEvent.getIdentifierCollection()) &&
+                !isStale(existingEvent, message.getTimestamp()))
             {
                 // Same talkgroup on same LCN - this is a call update, not a new call.
                 mLastGrantTimestampMap.put(edacsChannel, message.getTimestamp());
@@ -153,7 +155,6 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             grantEvent.setDetails("Invalid Channel Map - No Frequency For LCN " +
                     edacsChannel.getChannelNumber());
             broadcast(grantEvent);
-            clearChannelState(edacsChannel);
             return;
         }
 
@@ -163,7 +164,6 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
         {
             grantEvent.setDetails(MAX_TRAFFIC_CHANNELS_EXCEEDED);
             broadcast(grantEvent);
-            clearChannelState(edacsChannel);
             return;
         }
 
@@ -365,6 +365,35 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
                 }
             }
         }
+    }
+
+    /**
+     * Updates the call event for the traffic channel at the frequency when it decodes voice, the way the P25 traffic
+     * channel decoder states report into P25TrafficChannelManager instead of creating their own events.
+     * @param frequency of the traffic channel
+     * @param timestamp of the voice message
+     */
+    public synchronized void processTrafficVoice(long frequency, long timestamp)
+    {
+        for(Map.Entry<EDACSChannel, DecodeEvent> entry : mChannelGrantEventMap.entrySet())
+        {
+            if(entry.getKey().getDownlinkFrequency() == frequency)
+            {
+                entry.getValue().update(timestamp);
+                broadcastGrantUpdate(entry.getKey(), entry.getValue(), timestamp);
+                return;
+            }
+        }
+    }
+
+    /**
+     * Indicates if the event hasn't been updated within the threshold, using the same rule and threshold as
+     * ChannelEventTracker.isStale().
+     */
+    private static boolean isStale(DecodeEvent event, long timestamp)
+    {
+        long lastUpdate = event.getTimeEnd() > 0 ? event.getTimeEnd() : event.getTimeStart();
+        return timestamp - lastUpdate > STALE_EVENT_THRESHOLD_MS;
     }
 
     private void broadcastGrantUpdate(EDACSChannel edacsChannel, DecodeEvent event, long timestamp)
