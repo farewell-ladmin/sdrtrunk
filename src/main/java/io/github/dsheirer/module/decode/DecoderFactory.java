@@ -580,6 +580,16 @@ public class DecoderFactory
             tcm.createTrafficChannels(channel, decodeConfig);
             modules.add(tcm);
             modules.add(new EDACSDecoderState(channel, tcm));
+
+            //EDACS sites can move the control channel to another LCN.  Rotate through the configured
+            //control channel frequencies when the current one stops producing control messages.
+            if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
+                    sctmf.hasMultipleFrequencies())
+            {
+                List<State> activeStates = new ArrayList<>();
+                activeStates.add(State.CONTROL);
+                modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
+            }
         }
     }
 

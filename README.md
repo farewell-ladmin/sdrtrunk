@@ -117,6 +117,15 @@ the ProVoice codec) and point the JMBE library preference at that jar. With a
 stock JMBE jar, sdrtrunk logs that the codec is unsupported and ProVoice calls
 are silent; P25 and other codecs are unaffected.
 
+### Control channel rotation
+
+EDACS sites can move the control channel to another LCN, and the one listed on
+RadioReference isn't always the one in use. Set the EDACS channel's source to
+**Tuner (Multiple Frequencies)** and list the control channel candidates (the usual
+one plus any known alternates, not every LCN). sdrtrunk rotates to the next
+frequency when the current one stops producing control messages. The dwell defaults
+to 2000 ms, the maximum, so a fading control channel isn't dropped too quickly.
+
 ### ⚠️ Caveat: disable duplicate-call-detection-by-talkgroup for EDACS EA
 
 EDACS EA is commonly **message-trunked** — every over/PTT in a conversation is

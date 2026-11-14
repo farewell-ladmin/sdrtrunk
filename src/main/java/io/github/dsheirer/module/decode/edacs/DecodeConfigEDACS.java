@@ -15,6 +15,14 @@ public class DecodeConfigEDACS extends DecodeConfiguration
 {
     private static final int MAX_LCN = 25;
     public static final int TRAFFIC_CHANNEL_LIMIT_DEFAULT_EDACS = 4;
+
+    /**
+     * Control channel rotation dwell (ms) when multiple control channel frequencies are configured.  Defaults to the
+     * maximum so that a fading control channel isn't abandoned too quickly.
+     */
+    public static final int CHANNEL_ROTATION_DELAY_MINIMUM_MS = 400;
+    public static final int CHANNEL_ROTATION_DELAY_DEFAULT_MS = 2000;
+    public static final int CHANNEL_ROTATION_DELAY_MAXIMUM_MS = 2000;
     private String mLcnFrequencies = "";
     private VoiceMode mVoiceMode = VoiceMode.ANALOG;
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT_EDACS;

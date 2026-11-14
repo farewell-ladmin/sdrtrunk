@@ -226,7 +226,10 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     {
         if(mSourceConfigurationEditor == null)
         {
-            mSourceConfigurationEditor = new FrequencyEditor(mTunerManager);
+            mSourceConfigurationEditor = new FrequencyEditor(mTunerManager,
+                DecodeConfigEDACS.CHANNEL_ROTATION_DELAY_MINIMUM_MS,
+                DecodeConfigEDACS.CHANNEL_ROTATION_DELAY_MAXIMUM_MS,
+                DecodeConfigEDACS.CHANNEL_ROTATION_DELAY_DEFAULT_MS);
 
             mSourceConfigurationEditor.modifiedProperty()
                 .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
