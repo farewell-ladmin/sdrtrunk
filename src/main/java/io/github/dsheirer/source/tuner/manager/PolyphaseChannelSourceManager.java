@@ -213,23 +213,40 @@ public class PolyphaseChannelSourceManager extends ChannelSourceManager
         double usableHalfBandwidth = mTunerController.getUsableHalfBandwidth();
 
         //Strategy 2: start by placing the center frequency exactly one channel width below the first channel frequency
-        //and iteratively increase it one channel width at a time.  This optimally places the channels nearest to the
-        //center of the bandwidth
+        //and iteratively increase it one channel width at a time.  Of the center frequencies that fit, use the one
+        //that leaves the most room between the outermost channels and the edges of the usable bandwidth.  Taking the
+        //first one that fits (as this did) pins the highest channel against the upper edge whenever the channel set
+        //is wider than half the bandwidth, where the tuner's filter rolls off and aliases, and leaves the spare
+        //bandwidth unused at the lower edge.
         long start = channels.first().getFrequency() - (int)mPolyphaseChannelManager.getChannelBandwidth();
+        long bestCenterFrequency = -1;
+        double bestEdgeMargin = -1;
 
-        if(isValidCenterFrequency(channels, start))
+        while(true)
         {
-            return start;
-        }
-
-        while(start - channels.first().getMinFrequency() < usableHalfBandwidth)
-        {
-            start += (int)mPolyphaseChannelManager.getChannelBandwidth();
-
             if(isValidCenterFrequency(channels, start))
             {
-                return start;
+                double edgeMargin = Math.min(channels.first().getMinFrequency() - (start - usableHalfBandwidth),
+                    (start + usableHalfBandwidth) - channels.last().getMaxFrequency());
+
+                if(edgeMargin > bestEdgeMargin)
+                {
+                    bestEdgeMargin = edgeMargin;
+                    bestCenterFrequency = start;
+                }
             }
+
+            if(start - channels.first().getMinFrequency() >= usableHalfBandwidth)
+            {
+                break;
+            }
+
+            start += (int)mPolyphaseChannelManager.getChannelBandwidth();
+        }
+
+        if(bestCenterFrequency >= 0)
+        {
+            return bestCenterFrequency;
         }
 
         //Strategy 3: start by placing the first channel at the minimum location within the tuner bandwidth
