@@ -107,9 +107,20 @@ Payload bits are inverted when an inverted-variant sync (`INV_PROVOICE_SYNC` /
 `INV_PROVOICE_EA_SYNC`) is matched, mirroring DSD-FME `digitize()` synctype 14
 ("+PV") vs 15 ("-PV") handling — without this the IMBE grids decode inverted and
 the audio is garbled. The 7100→4400 conversion and speech synthesis are handled
-by the JMBE `PROVOICE` codec. Audio from recorded calls is intelligible
-(listener-confirmed offline); the 3-tap matched-filter symbol slicer still needs
-confirming on a live system. Weak signals produce more muted/repeat frames.
+by the JMBE `PROVOICE` codec. The symbol timing is not recovered: a framer runs
+on each of the 5 sample phases and each frame is taken from the best one. Live
+audio on the test system is clear (listener-confirmed, November 2026). Weak
+channels lose frames; up to two bit errors are tolerated in the sync word.
+
+### Tested scope
+
+This has been developed and tested against **one system only**: an EDACS
+Extended Addressing (EA) wideband (9600 baud) system carrying ProVoice digital
+voice. Voice mode **Auto (Analog/Digital by grant)** works on that system.
+
+Not tested: EDACS Standard/Networked addressing and analog voice traffic.
+EDACS narrowband is not implemented. The ProVoice voice marker default is the
+value seen on that one system and may be different elsewhere (see below).
 
 The `PROVOICE` codec is not in stock JMBE. Build the `provoice-on-v2` branch of
 [farewell-ladmin/jmbe](https://github.com/farewell-ladmin/jmbe) (JMBE 2.1.1 plus

@@ -38,7 +38,6 @@ public enum DecoderType
     P25_PHASE1("P25 Phase 1", "P25-1", Protocol.APCO25),
     P25_PHASE2("P25 Phase 2", "P25-2", Protocol.APCO25_PHASE2),
     EDACS("EDACS", "EDACS", Protocol.EDACS),
-    EDACS_NB("EDACS Narrowband", "EDACS-NB", Protocol.EDACS_NB),
     MOTOROLA_TYPE_II("Motorola Type II", "Moto T2", Protocol.MOTOROLA_TYPE_II),
 
     //Auxiliary Decoders
@@ -64,7 +63,7 @@ public enum DecoderType
      * Primary decoders that operate on I/Q sample streams
      */
     public static final EnumSet<DecoderType> PRIMARY_DECODERS = EnumSet.of(AM, DMR, LTR, LTR_NET, MPT1327, NBFM, NXDN,
-            P25_PHASE1, P25_PHASE2, EDACS, EDACS_NB, MOTOROLA_TYPE_II, PASSPORT);
+            P25_PHASE1, P25_PHASE2, EDACS, MOTOROLA_TYPE_II, PASSPORT);
 
     /**
      * Auxiliary decoders that operate on in-band signalling in the decoded audio channel

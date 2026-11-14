@@ -6,21 +6,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * EDACS trunking control channel demodulator. Receives FM-demodulated audio
- * (typically 24 kHz mono float from sdrtrunk's channelizer output) and
- * extracts the GFSK bit stream.
+ * EDACS control channel bit slicer.  Receives FM-demodulated samples at 48 kHz (5 samples per symbol at 9600 baud) and
+ * feeds the sliced bits to the frame processors.
  *
- * <p>Bit detection uses DSD-FME-style single-sample-at-the-symbol-center
- * (see DSD-FME {@code dsd_symbol.c}: for GFSK at 5 sps, sample at i=2).
- * The mean-deviation approach used previously produced noisy bits because
- * it averages across bit boundaries, leading to
- * BCH false-failures that prevented the control channel from being
- * reliably decoded on live FM-demodulated signals.</p>
+ * <p>The symbol timing is not recovered.  A frame processor runs on each of the 5 sample phases and each frame is
+ * sent once, from whichever phase decodes it first.  A frame only decodes when its words pass the BCH check, so a
+ * phase that produces a frame is a usable phase.</p>
  *
- * <p>AFC tracks the running mean of the audio (carrier frequency
- * offset plus any DC bias from the FM demodulator). A faster alpha
- * (0.05) is used so the AFC can settle within a few hundred samples
- * and follow any bias drift over the course of a recording.</p>
+ * <p>The DC tracker follows the mean of the discriminator output (carrier frequency offset plus any bias from the FM
+ * demodulator).  It is slow against the bit rate so that it does not follow the data.</p>
  */
 public class EDACSSyncDetector
 {
@@ -32,145 +26,87 @@ public class EDACSSyncDetector
     /**
      * Samples after a frame during which only the phase that sent it may send again.  Longer than the 5 samples
      * within which the other phases decode the same frame, far shorter than the 1440 samples between frames, so the
-     * phase is in effect chosen again for every frame.  This was 1 second: a phase that had drifted to marginal but
-     * still decoded something each second was never replaced, which held the 2026-11-14 recordings at 14 to 26
-     * messages per second where they now replay at 31 to 33.
+     * phase is in effect chosen again for every frame.
      */
     private static final long PHASE_STALE_SAMPLES = 100L;
 
-    /** AFC exponential moving average alpha. Slow enough to avoid tracking symbol data. */
+    /** DC tracker exponential moving average alpha. Slow enough to avoid tracking symbol data. */
     private static final double AFC_ALPHA = 0.001;
 
-    /** DC bias clamp to prevent the AFC from wandering far from the carrier. */
+    /** DC bias clamp to prevent the tracker from wandering far from the carrier. */
     private static final float AFC_MAX = 2.0f;
 
-    private final EDACSFrameProcessor mFrameProcessor = new EDACSFrameProcessor();
     private final EDACSFrameProcessor[] mPhaseFrameProcessors = new EDACSFrameProcessor[PHASE_CANDIDATES];
-    private Listener<IMessage> mMessageListener;
+    private long mSampleIndex;
+    private int mActivePhase;
+    private long mLastActiveDecodeSampleIndex;
+    private boolean mLocked;
+    private double mAfc;
 
-    private double mSamplesPerSymbol = 2.5;
-    private double mSampleAccum = 0;
-    private long mSampleIndex = 0;
-    private boolean mPhaseScanMode = false;
-    private int mActivePhase = 0;
-    private long mLastActiveDecodeSampleIndex = 0;
-    private boolean mLocked = false;
-    private float mLastSample = 0f;
-    private float mLastDeviation = 0f;
-    private double mAfc = 0.0;
-
-
-    public void setSampleRate(double sampleRate)
+    public EDACSSyncDetector()
     {
-        mSamplesPerSymbol = sampleRate / 9600.0;
-        mSampleAccum = mSamplesPerSymbol / 2.0;
-        mSampleIndex = 0;
-        mActivePhase = (int)Math.floor(mSamplesPerSymbol / 2.0);
-        mLastActiveDecodeSampleIndex = 0;
-        mLocked = false;
-        mPhaseScanMode = Math.abs(mSamplesPerSymbol - PHASE_CANDIDATES) < 0.01;
-
-        if(mPhaseScanMode)
-        {
-            for(int x = 0; x < mPhaseFrameProcessors.length; x++)
-            {
-                mPhaseFrameProcessors[x] = new EDACSFrameProcessor();
-            }
-        }
+        reset();
     }
 
+    /**
+     * Resets the detector, for example when the sample rate of the source changes.
+     */
+    public void reset()
+    {
+        for(int x = 0; x < mPhaseFrameProcessors.length; x++)
+        {
+            mPhaseFrameProcessors[x] = new EDACSFrameProcessor();
+        }
+
+        mSampleIndex = 0;
+        mActivePhase = 0;
+        mLastActiveDecodeSampleIndex = -PHASE_STALE_SAMPLES - 1;
+        mLocked = false;
+        mAfc = 0.0;
+    }
+
+    /**
+     * Processes demodulated samples at 48 kHz.
+     * @param demodulated samples
+     * @param messageListener to receive decoded messages
+     */
     public void process(float[] demodulated, Listener<IMessage> messageListener)
     {
-        mMessageListener = messageListener;
-
         for(float sample : demodulated)
         {
-            // Track carrier offset / DC bias with the AFC. Clamp the AFC to
-            // a reasonable range so a brief dropout doesn't shift it far away
-            // from the actual signal center.
             mAfc = mAfc * (1.0 - AFC_ALPHA) + sample * AFC_ALPHA;
             if(mAfc > AFC_MAX) mAfc = AFC_MAX;
             if(mAfc < -AFC_MAX) mAfc = -AFC_MAX;
 
-            float dev = sample - (float)mAfc;
-            mLastSample = sample;
-            mLastDeviation = dev;
-            int bit = mLastDeviation >= 0 ? 0 : 1;
+            int bit = (sample - (float)mAfc) >= 0 ? 0 : 1;
+            int phase = (int)(mSampleIndex % PHASE_CANDIDATES);
 
-            if(mPhaseScanMode)
+            mPhaseFrameProcessors[phase].processBit(bit, message ->
             {
-                int phase = (int)(mSampleIndex % PHASE_CANDIDATES);
-                mPhaseFrameProcessors[phase].processBit(bit, message ->
+                if(messageListener == null)
                 {
-                    if(messageListener == null)
-                    {
-                        return;
-                    }
-
-                    //Send each frame once, from whichever phase decodes it first.  The phases that decode the same
-                    //frame finish within 5 samples of each other, so anything from another phase that soon after
-                    //is the same frame again.
-                    if(phase == mActivePhase || isActivePhaseStale())
-                    {
-                        mActivePhase = phase;
-                        mLastActiveDecodeSampleIndex = mSampleIndex;
-
-                        if(!mLocked)
-                        {
-                            mLocked = true;
-                            mLog.debug("EDACS control channel locked on phase " + phase);
-                        }
-
-                        messageListener.receive(message);
-                    }
-                });
-
-                mSampleIndex++;
-            }
-            else
-            {
-                mSampleAccum += 1.0;
-
-                if(mSampleAccum < mSamplesPerSymbol)
-                {
-                    continue;
+                    return;
                 }
-                mSampleAccum -= mSamplesPerSymbol;
 
-                // DSD-FME single-sample-at-symbol-center bit detection. This
-                // avoids mixing adjacent symbols at the 9600 baud transitions.
-                mFrameProcessor.processBit(bit, messageListener);
-            }
+                //Send each frame once, from whichever phase decodes it first.  The phases that decode the same
+                //frame finish within 5 samples of each other, so anything from another phase that soon after
+                //is the same frame again.
+                if(phase == mActivePhase || mSampleIndex - mLastActiveDecodeSampleIndex > PHASE_STALE_SAMPLES)
+                {
+                    mActivePhase = phase;
+                    mLastActiveDecodeSampleIndex = mSampleIndex;
 
+                    if(!mLocked)
+                    {
+                        mLocked = true;
+                        mLog.debug("EDACS control channel locked on phase " + phase);
+                    }
+
+                    messageListener.receive(message);
+                }
+            });
+
+            mSampleIndex++;
         }
-    }
-
-    public EDACSFrameProcessor getFrameProcessor()
-    {
-        if(mPhaseScanMode)
-        {
-            return mPhaseFrameProcessors[mActivePhase];
-        }
-
-        return mFrameProcessor;
-    }
-
-    private boolean isActivePhaseStale()
-    {
-        if(mLastActiveDecodeSampleIndex == 0)
-        {
-            return mSampleIndex > PHASE_STALE_SAMPLES;
-        }
-
-        return mSampleIndex - mLastActiveDecodeSampleIndex > PHASE_STALE_SAMPLES;
-    }
-
-    /**
-     * Indicates recent activity (a frame was decoded within the last 5
-     * seconds). Used by callers to decide whether the demodulator is locked.
-     */
-    public boolean hasSync()
-    {
-        return getFrameProcessor().getFramesDecoded() > 0;
     }
 }

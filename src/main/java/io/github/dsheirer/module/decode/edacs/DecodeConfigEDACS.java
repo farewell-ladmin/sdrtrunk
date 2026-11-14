@@ -10,6 +10,14 @@ import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
  * EDACS decode configuration with per-LCN frequency list.
  * Frequencies are stored as a comma-separated string in XML, index = LCN-1.
  * Example: "851175000,851225000,851425000,..." for MBTA.
+ *
+ * <p>Tested scope: this decoder has been developed and tested against one system only, an EDACS Extended Addressing
+ * (EA) wideband (9600 baud) system carrying ProVoice digital voice.  Assignments by grant type (voice mode AUTO) work
+ * on that system.  EDACS Standard/Networked addressing, analog voice traffic and EDACS narrowband have not been
+ * tested, and narrowband is not implemented.</p>
+ *
+ * <p>The ProVoice voice marker default is the value seen on that one system.  Other systems may use another
+ * value: see {@link #getProVoiceVoiceMarker()}.</p>
  */
 public class DecodeConfigEDACS extends DecodeConfiguration
 {
@@ -27,7 +35,10 @@ public class DecodeConfigEDACS extends DecodeConfiguration
     private VoiceMode mVoiceMode = VoiceMode.ANALOG;
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_LIMIT_DEFAULT_EDACS;
 
-    /** ProVoice voice frame marker seen on the MBTA system and named as usual in DSD-FME provoice.c */
+    /**
+     * ProVoice voice frame marker.  This is the value observed on the one system this decoder was tested against, and
+     * the value DSD-FME provoice.c calls usual.  It has not been confirmed on any other system.
+     */
     public static final String PROVOICE_VOICE_MARKER_DEFAULT = "2175";
 
     /** Value of the voice marker when frames are not checked for it */

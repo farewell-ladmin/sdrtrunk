@@ -62,12 +62,6 @@ public class EDACSFrameProcessor
 
     private final EDACSVoter mVoter = new EDACSVoter();
 
-    private int mFramesDetected = 0;
-    private int mFramesDecoded = 0;
-    private int mBchPasses = 0;
-    private int mBchFails = 0;
-    private int mOneWordBchRejects = 0;
-    private int mSyncMatches = 0;
 
     /**
      * Feeds a single demodulated bit to the frame processor. Bit value 1
@@ -94,7 +88,6 @@ public class EDACSFrameProcessor
 
         if(mSyncRegister == EDACS_SYNC || mSyncRegister == EDACS_SYNC_INV)
         {
-            mSyncMatches++;
             mInvertPayload = mSyncRegister == EDACS_SYNC_INV;
             mFramePending = DATA_BITS;
             mDataBitCount = 0;
@@ -114,7 +107,6 @@ public class EDACSFrameProcessor
 
     private void decodeFrame(Listener<IMessage> messageListener)
     {
-        mFramesDetected++;
 
         CorrectedBinaryMessage[] words = new CorrectedBinaryMessage[6];
         for(int w = 0; w < 6; w++)
@@ -137,14 +129,10 @@ public class EDACSFrameProcessor
         {
             if(data1 != null || data2 != null)
             {
-                mOneWordBchRejects++;
             }
-            mBchFails++;
             return;
         }
 
-        mBchPasses++;
-        mFramesDecoded++;
 
         EDACSMessage message = EDACSMessageFactory.create(data1, data2, System.currentTimeMillis());
 
@@ -157,40 +145,5 @@ public class EDACSFrameProcessor
         {
             messageListener.receive(message);
         }
-    }
-
-    public int getFramesDetected()
-    {
-        return mFramesDetected;
-    }
-
-    public int getFramesDecoded()
-    {
-        return mFramesDecoded;
-    }
-
-    public int getBchPasses()
-    {
-        return mBchPasses;
-    }
-
-    public int getBchFails()
-    {
-        return mBchFails;
-    }
-
-    public int getOneWordBchRejects()
-    {
-        return mOneWordBchRejects;
-    }
-
-    public int getDottingMatches()
-    {
-        return mSyncMatches;
-    }
-
-    public int getSyncMatches()
-    {
-        return mSyncMatches;
     }
 }

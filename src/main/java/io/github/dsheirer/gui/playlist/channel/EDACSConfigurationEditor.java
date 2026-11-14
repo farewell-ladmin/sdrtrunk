@@ -153,6 +153,13 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
 
             vbox.getChildren().add(voiceGrid);
 
+            Label scopeLabel = new Label("Tested on EDACS Extended Addressing (EA) with ProVoice voice only. Standard/Networked " +
+                "addressing, analog voice and narrowband are untested. The voice marker default is from one system and " +
+                "may differ on others.");
+            scopeLabel.setWrapText(true);
+            scopeLabel.setPadding(new Insets(8, 0, 0, 0));
+            vbox.getChildren().add(scopeLabel);
+
             mDecoderPane.setContent(vbox);
         }
 

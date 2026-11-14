@@ -21,9 +21,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * EDACS trunking decoder using edacs-fm-style sync frame detection.
+ * EDACS trunking control channel decoder using edacs-fm-style sync frame detection.
  * Demodulates complex I/Q samples to FM audio, digitizes via AFC threshold,
  * detects sync frame pattern, extracts and BCH-checks messages.
+ *
+ * <p>Tested against an EDACS Extended Addressing (EA) wideband (9600 baud) control channel only.  See
+ * {@link DecodeConfigEDACS} for the tested scope.</p>
  */
 public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Listener<ComplexSamples>,
         ISourceEventListener, IDecoderStateEventProvider
@@ -104,7 +107,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         mSyncDetector.process(resampled, getMessageListener());
     }
 
-    private double mDecimatedRate = 24000.0;
+    private double mDecimatedRate = 48000.0;
 
     private void setSampleRate(double sampleRate)
     {
@@ -130,7 +133,7 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         mLog.debug("EDACS decoder sample rate: " + mDecimatedRate + " (decimation: " + decimation + ") -> 48 kHz");
 
-        mSyncDetector.setSampleRate(48000.0);
+        mSyncDetector.reset();
     }
 
     public class SourceEventProcessor implements Listener<SourceEvent>

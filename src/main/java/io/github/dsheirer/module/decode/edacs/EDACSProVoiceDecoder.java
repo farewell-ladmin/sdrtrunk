@@ -168,13 +168,7 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
     private long mSampleCount = 0;
     private long mLastFrameSample = -MINIMUM_FRAME_SPACING_SAMPLES;
 
-    private int mFramesDetected = 0;
-    private int mFramesDecoded = 0;
-    private int mDecodeErrors = 0;
-    private int mSyncRejects = 0;
 
-    private float mLastSample = 0f;
-    private float mLastDeviation = 0f;
     private final float[] mSymbolWindow = new float[PHASES];
     private double mAfc = 0.0;
 
@@ -314,8 +308,6 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             if(mAfc < -AFC_MAX) mAfc = -AFC_MAX;
 
             float dev = sample - (float)mAfc;
-            mLastSample = sample;
-            mLastDeviation = dev;
             //Each sample is the next bit for one of the 5 phase framers
             int phase = mPhase;
             mPhase = (mPhase + 1) % PHASES;
@@ -392,7 +384,6 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             {
                 EDACSProVoiceMessage message = mCandidate;
                 mCandidate = null;
-                mFramesDecoded++;
                 mFrameSyncActive = true;
                 mBitsSinceFrame = 0;
 
@@ -419,7 +410,6 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
      */
     private void decodeFrame(int phase)
     {
-        mFramesDetected++;
 
         if(mCandidate == null && mSampleCount - mLastFrameSample < MINIMUM_FRAME_SPACING_SAMPLES)
         {
@@ -428,14 +418,12 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
 
         if(mFrameBitCount < FRAME_BITS)
         {
-            mDecodeErrors++;
             return;
         }
 
         String syncPattern = getSyncPattern();
         if(syncPattern == null)
         {
-            mSyncRejects++;
             return;
         }
 
@@ -656,10 +644,6 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
         return best;
     }
 
-    public int getFramesDetected() { return mFramesDetected; }
-    public int getFramesDecoded() { return mFramesDecoded; }
-    public int getDecodeErrors() { return mDecodeErrors; }
-    public int getSyncRejects() { return mSyncRejects; }
 
     private float[] resample(float[] input, double inputRate, double outputRate)
     {
