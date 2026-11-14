@@ -14,6 +14,9 @@ import java.util.List;
  */
 public class EDACSProVoiceMessage implements IMessage
 {
+    private static final int VOICE_MARKER = 0x2175;
+    private static final int VOICE_MARKER_MAXIMUM_BIT_ERRORS = 3;
+
     private final byte[][] mImbeFrames = new byte[4][];
     private final int[][][] mImbeGrids;
     private final boolean[] mFrameBits;
@@ -124,9 +127,25 @@ public class EDACSProVoiceMessage implements IMessage
         return mTimestamp;
     }
 
+    /**
+     * Indicates if this frame carries voice.  A voice frame has a fixed 16-bit marker between the first halves of
+     * IMBE frames 1,2 and 3,4 (DSD-FME provoice.c: "usually 2175").  The signalling burst that starts an over and
+     * the dotting that ends it also follow a sync word, but do not carry the marker, and sound as a burst of noise
+     * if they are passed to the vocoder.  This check is not in DSD-FME.
+     */
+    public boolean isVoice()
+    {
+        return Integer.bitCount(mBfMarker ^ VOICE_MARKER) <= VOICE_MARKER_MAXIMUM_BIT_ERRORS;
+    }
+
     @Override
     public boolean isValid()
     {
+        if(!isVoice())
+        {
+            return false;
+        }
+
         for(byte[] frame : mImbeFrames)
         {
             if(frame == null || frame.length != 18)
