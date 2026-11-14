@@ -115,18 +115,31 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
 
         //The control channel sends an Assignment for a new call and then Updates for as long as it runs, and the last
         //Update or two arrive up to a second after the site has dropped the working channel.  Those are not a new
-        //call: ignore them, or the traffic channel is started again on a frequency that has gone quiet.
+        //call: ignore them, or the traffic channel is started again on a frequency that has gone quiet.  The Update
+        //has to be for the same talkgroup from the same radio: an Update from another radio is a new call whose
+        //Assignment was missed.  (The same radio keying again on the same LCN within the hold-off, with its
+        //Assignment missed, cannot be told apart from a trailing Update and is joined when the hold-off ends.)
         ChannelDrop drop = mChannelDropMap.get(edacsChannel);
 
         if(drop != null)
         {
             if(message.isUpdate() && message.getTimestamp() - drop.timestamp() <= CHANNEL_DROP_UPDATE_HOLDOFF_MS &&
-                Objects.equals(drop.to(), getToIdentifier(identifierCollection)))
+                Objects.equals(drop.to(), getIdentifier(identifierCollection, Role.TO)) &&
+                Objects.equals(drop.from(), getIdentifier(identifierCollection, Role.FROM)))
             {
                 return;
             }
 
             mChannelDropMap.remove(edacsChannel);
+
+            //A new call on this LCN while the dropped traffic channel is still stopping: start it when the stop
+            //completes.  Left to fall through it would update the call that just ended, and be lost with it.
+            if(mAllocatedTrafficChannelMap.containsKey(edacsChannel))
+            {
+                mPendingChannelGrantMap.put(edacsChannel,
+                    new PendingChannelGrant(message, identifierCollection, edacsChannel));
+                return;
+            }
         }
 
         DecodeEvent existingEvent = mChannelGrantEventMap.get(edacsChannel);
@@ -443,7 +456,8 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
             if(entry.getKey().getDownlinkFrequency() == frequency)
             {
                 mChannelDropMap.put(entry.getKey(),
-                    new ChannelDrop(getToIdentifier(entry.getValue().getIdentifierCollection()), timestamp));
+                    new ChannelDrop(getIdentifier(entry.getValue().getIdentifierCollection(), Role.TO),
+                        getIdentifier(entry.getValue().getIdentifierCollection(), Role.FROM), timestamp));
                 entry.getValue().end(timestamp);
                 broadcast(entry.getValue());
                 return;
@@ -501,7 +515,12 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
 
     private Identifier getToIdentifier(IdentifierCollection collection)
     {
-        List<Identifier> identifiers = collection.getIdentifiers(Role.TO);
+        return getIdentifier(collection, Role.TO);
+    }
+
+    private Identifier getIdentifier(IdentifierCollection collection, Role role)
+    {
+        List<Identifier> identifiers = collection.getIdentifiers(role);
 
         if(identifiers.size() >= 1)
         {
@@ -614,7 +633,7 @@ public class EDACSTrafficChannelManager extends TrafficChannelManager implements
         }
     }
 
-    private record ChannelDrop(Identifier to, long timestamp)
+    private record ChannelDrop(Identifier to, Identifier from, long timestamp)
     {
     }
 

@@ -132,8 +132,9 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
 
     /**
      * A single framer does not look for sync while it is reading a frame (as DSD-FME processProVoice), so frames
-     * are never closer together than this.  With 5 framers the same limit is applied across all of them, otherwise
-     * an idle phase picks up the extra sync words in the burst that precedes the voice frames of each over.
+     * are never closer together than this.  With 5 framers the same limit is applied across all of them after a
+     * voice frame, so that a false sync on an idle phase cannot follow it.  Frames without the voice marker are not
+     * played and do not start the limit.
      */
     private static final int MINIMUM_FRAME_SPACING_SAMPLES = (FRAME_BITS - SYNC_BITS) * PHASES;
     /**
@@ -373,13 +374,16 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             {
                 EDACSProVoiceMessage message = mCandidate;
                 mCandidate = null;
-                mLastFrameSample = mSampleCount;
                 mFramesDecoded++;
                 mFrameSyncActive = true;
                 mBitsSinceFrame = 0;
 
+                //Only a voice frame holds off the frames that follow it.  A frame without the voice marker can be
+                //a false sync part way through a voice frame, and holding off after it discarded the real frame
+                //that completed a few milliseconds later.
                 if(message.isVoice())
                 {
+                    mLastFrameSample = mSampleCount;
                     mVoiceActive = true;
                 }
 
@@ -446,7 +450,10 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             mCandidateEye = mPhaseEye[phase];
             mCandidateSamplesRemaining = PHASES;
         }
-        else if(mPhaseEye[phase] > mCandidateEye)
+        //A phase whose frame carries the voice marker beats one whose frame does not, whatever the eye: the widest
+        //eye is only an estimate of the best phase, and the marker is a check on the bits themselves.
+        else if((message.isVoice() && !mCandidate.isVoice()) ||
+            (message.isVoice() == mCandidate.isVoice() && mPhaseEye[phase] > mCandidateEye))
         {
             mCandidate = message;
             mCandidateEye = mPhaseEye[phase];

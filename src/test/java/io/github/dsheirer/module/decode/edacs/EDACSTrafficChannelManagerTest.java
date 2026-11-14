@@ -12,6 +12,7 @@ import io.github.dsheirer.controller.channel.event.ChannelStartProcessingRequest
 import io.github.dsheirer.identifier.IdentifierCollection;
 import io.github.dsheirer.identifier.Role;
 import io.github.dsheirer.module.decode.edacs.channel.EDACSChannel;
+import io.github.dsheirer.module.decode.edacs.identifier.EDACSRadio;
 import io.github.dsheirer.module.decode.edacs.identifier.EDACSTalkgroup;
 import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
 import io.github.dsheirer.module.decode.event.IDecodeEvent;
@@ -191,6 +192,72 @@ class EDACSTrafficChannelManagerTest
             ChannelEvent.Event.NOTIFICATION_PROCESSING_STOP));
         grant(manager, channel, 531, start + 9000, true);
         assertEquals(4, cpm.mStartRequests, "an update long after the drop is a call in progress to join");
+    }
+
+    private static void grant(EDACSTrafficChannelManager manager, EDACSChannel channel, int talkgroup, int source,
+                              long timestamp, boolean update)
+    {
+        EDACSMessage message = new EDACSMessage(EDACSMessageType.DIGITAL_GROUP_CALL, new CorrectedBinaryMessage(40),
+            timestamp);
+        message.setUpdate(update);
+        IdentifierCollection ic = new IdentifierCollection(List.of(new EDACSTalkgroup(talkgroup, Role.TO),
+            new EDACSRadio(source, Role.FROM)));
+        manager.processChannelGrant(message, ic, channel);
+    }
+
+    @Test
+    void updateFromAnotherRadioAfterAChannelDropIsANewCall()
+    {
+        Set<IDecodeEvent> events = Collections.newSetFromMap(new IdentityHashMap<>());
+        EDACSTrafficChannelManager manager = manager(events);
+        FakeChannelProcessingManager cpm = new FakeChannelProcessingManager(manager, false);
+        EventBus bus = new EventBus();
+        bus.register(cpm);
+        manager.setInterModuleEventBus(bus);
+
+        EDACSChannel channel = lcn1();
+        long start = System.currentTimeMillis();
+        grant(manager, channel, 530, 102, start, false);
+        manager.processTrafficVoice(FREQUENCY, start + 1000);
+        manager.processTrafficChannelDrop(FREQUENCY, start + 2000);
+        manager.getChannelEventListener().receive(new ChannelEvent(cpm.mLastChannel,
+            ChannelEvent.Event.NOTIFICATION_PROCESSING_STOP));
+
+        //A trailing update for the call that ended
+        grant(manager, channel, 530, 102, start + 2300, true);
+        assertEquals(1, cpm.mStartRequests, "a trailing update from the same radio should not restart the channel");
+
+        //Another radio answers on the same LCN and talkgroup, and its assignment was not decoded
+        grant(manager, channel, 530, 3599, start + 2600, true);
+        assertEquals(2, cpm.mStartRequests, "an update from another radio is a new call to join");
+        assertEquals(2, events.size());
+    }
+
+    @Test
+    void assignmentBeforeTheDroppedChannelStopsStartsWhenItHasStopped()
+    {
+        Set<IDecodeEvent> events = Collections.newSetFromMap(new IdentityHashMap<>());
+        EDACSTrafficChannelManager manager = manager(events);
+        FakeChannelProcessingManager cpm = new FakeChannelProcessingManager(manager, false);
+        EventBus bus = new EventBus();
+        bus.register(cpm);
+        manager.setInterModuleEventBus(bus);
+
+        EDACSChannel channel = lcn1();
+        long start = System.currentTimeMillis();
+        grant(manager, channel, 530, 102, start, false);
+        manager.processTrafficVoice(FREQUENCY, start + 1000);
+        manager.processTrafficChannelDrop(FREQUENCY, start + 2000);
+        Channel dropped = cpm.mLastChannel;
+
+        //The next over on the same LCN and talkgroup is assigned before the dropped channel has finished stopping
+        grant(manager, channel, 530, 3599, start + 2100, false);
+        assertEquals(1, cpm.mStartRequests, "the new call waits for the dropped channel to stop");
+
+        manager.getChannelEventListener().receive(new ChannelEvent(dropped,
+            ChannelEvent.Event.NOTIFICATION_PROCESSING_STOP));
+        assertEquals(2, cpm.mStartRequests, "the new call starts once the dropped channel has stopped");
+        assertEquals(2, events.size(), "the new call has its own event");
     }
 
     @Test
