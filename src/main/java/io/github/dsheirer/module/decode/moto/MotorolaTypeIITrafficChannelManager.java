@@ -285,7 +285,9 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
                             mAllocatedTrafficChannelMap.remove(rejected);
                             mAvailableTrafficChannelQueue.add(channel);
 
-                            final var event = mChannelGrantEventMap.remove(rejected);
+                            //Leave the event in place (as P25TrafficChannelManager does) so repeated grants for
+                            //this call update the event instead of recreating it and requesting another channel.
+                            final var event = mChannelGrantEventMap.get(rejected);
 
                             if(event != null)
                             {
