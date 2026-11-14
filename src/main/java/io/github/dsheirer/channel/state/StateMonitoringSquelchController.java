@@ -73,7 +73,7 @@ public class StateMonitoringSquelchController implements IStateMachineListener, 
     {
         if(!mSquelchLocked)
         {
-            if(state == State.CALL || state == State.ENCRYPTED)
+            if(state == State.CALL)
             {
                 setSquelchState(SquelchState.UNSQUELCH);
             }
