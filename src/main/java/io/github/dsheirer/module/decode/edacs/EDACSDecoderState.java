@@ -15,6 +15,7 @@ import io.github.dsheirer.message.SyncLossMessage;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.edacs.channel.EDACSChannel;
 import io.github.dsheirer.module.decode.edacs.message.EDACSMessage;
+import io.github.dsheirer.module.decode.edacs.message.EDACSProVoiceEndMessage;
 import io.github.dsheirer.module.decode.edacs.message.EDACSProVoiceMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,6 +90,12 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
         if(message instanceof SyncLossMessage syncLoss)
         {
             processProVoiceEnd(syncLoss.getTimestamp());
+            return;
+        }
+
+        if(message instanceof EDACSProVoiceEndMessage end)
+        {
+            processProVoiceChannelDrop(end.getTimestamp());
             return;
         }
 
@@ -171,6 +178,26 @@ public class EDACSDecoderState extends DecoderState implements IMessageListener
         }
 
         broadcast(new DecoderStateEvent(this, Event.DECODE, State.ACTIVE));
+    }
+
+    /**
+     * The site dropped the working channel (dotting after voice).  Handled like P25 handles a network commanded call
+     * termination (P25P1DecoderState LCCallTermination): end the call and broadcast END, which tears down the traffic
+     * channel straight away instead of leaving it in Now Playing until the control channel grants go stale.
+     */
+    private void processProVoiceChannelDrop(long timestamp)
+    {
+        if(mChannelType != ChannelType.TRAFFIC)
+        {
+            return;
+        }
+
+        if(mTrafficChannelManager != null)
+        {
+            mTrafficChannelManager.processTrafficCallEnd(getCurrentFrequency(), timestamp);
+        }
+
+        broadcast(new DecoderStateEvent(this, Event.END, State.FADE));
     }
 
     private void processProVoiceTraffic(EDACSProVoiceMessage message)

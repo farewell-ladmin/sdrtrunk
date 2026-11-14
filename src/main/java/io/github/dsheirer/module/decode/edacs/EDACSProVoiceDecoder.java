@@ -19,6 +19,7 @@ import io.github.dsheirer.message.SyncLossMessage;
 import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.module.decode.Decoder;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.edacs.message.EDACSProVoiceEndMessage;
 import io.github.dsheirer.module.decode.edacs.message.EDACSProVoiceMessage;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.sample.complex.ComplexSamples;
@@ -135,6 +136,16 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
      * an idle phase picks up the extra sync words in the burst that precedes the voice frames of each over.
      */
     private static final int MINIMUM_FRAME_SPACING_SAMPLES = (FRAME_BITS - SYNC_BITS) * PHASES;
+    /**
+     * The site ends a transmission with dotting (alternating bits) on the working channel.  This many alternating
+     * bits in a row on any phase, once voice has been decoded, is reported as the end of the transmission.  Voice and
+     * the burst that starts an over do not contain a run this long.
+     */
+    private static final int END_DOTTING_BITS = 96;
+    private final boolean[] mPhaseLastBit = new boolean[PHASES];
+    private final int[] mPhaseDottingRun = new int[PHASES];
+    private boolean mVoiceActive = false;
+
     private long mSampleCount = 0;
     private long mLastFrameSample = -MINIMUM_FRAME_SPACING_SAMPLES;
 
@@ -297,6 +308,7 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             if(phase == 0 && mFrameSyncActive && ++mBitsSinceFrame >= SYNC_LOSS_BITS)
             {
                 mFrameSyncActive = false;
+                mVoiceActive = false;
 
                 if(messageListener != null)
                 {
@@ -313,6 +325,24 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
             mFrameBits[mFrameBitCount % mFrameBits.length] = bit;
             mFrameBitCount++;
             mPhaseEye[phase] += Math.abs(smoothedDeviation);
+
+            //Report the end of the transmission (as the P25 decoder reports a call termination) on dotting
+            if(bit == mPhaseLastBit[phase])
+            {
+                mPhaseDottingRun[phase] = 0;
+            }
+            else if(++mPhaseDottingRun[phase] >= END_DOTTING_BITS && mVoiceActive)
+            {
+                mVoiceActive = false;
+                mFrameSyncActive = false;
+
+                if(messageListener != null)
+                {
+                    messageListener.receive(new EDACSProVoiceEndMessage(System.currentTimeMillis()));
+                }
+            }
+
+            mPhaseLastBit[phase] = bit;
 
             if(mFramePending > 0)
             {
@@ -340,6 +370,11 @@ public class EDACSProVoiceDecoder extends Decoder implements IComplexSamplesList
                 mFramesDecoded++;
                 mFrameSyncActive = true;
                 mBitsSinceFrame = 0;
+
+                if(message.isVoice())
+                {
+                    mVoiceActive = true;
+                }
 
                 if(messageListener != null)
                 {
