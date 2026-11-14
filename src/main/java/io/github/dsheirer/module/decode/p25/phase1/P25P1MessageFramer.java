@@ -247,13 +247,6 @@ public class P25P1MessageFramer extends C4FMMessageFramer
                     mMessageAssembler.receive(symbol, softSymbol, reliability);
                 }
             }
-            else if(mDibitCounter >= 4800)
-            {
-                //Force-complete and dispatch a stale assembly that has been accumulating dibits for >1 second.
-                mMessageAssembler.forceCompletion(mPreviousDataUnitID, mDetectedDataUnitID);
-                dispatchMessage();
-                mDibitCounter = 0;
-            }
             else
             {
                 mMessageAssembler.receive(symbol, softSymbol, reliability);
