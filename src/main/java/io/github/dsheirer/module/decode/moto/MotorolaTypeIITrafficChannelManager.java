@@ -42,6 +42,7 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
     private List<Channel> mManagedTrafficChannels;
     private Map<MotorolaTypeIIChannel,Channel> mAllocatedTrafficChannelMap = new ConcurrentHashMap<>();
     private Map<MotorolaTypeIIChannel,DecodeEvent> mChannelGrantEventMap = new ConcurrentHashMap<>();
+    private static final long STALE_EVENT_THRESHOLD_MS = 3000; //Same as ChannelEventTracker
     private TrafficChannelTeardownMonitor mTrafficChannelTeardownMonitor = new TrafficChannelTeardownMonitor();
     private Listener<ChannelEvent> mChannelEventListener;
     private Listener<IDecodeEvent> mDecodeEventListener;
@@ -77,7 +78,7 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
     public void processChannelGrant(MotorolaTypeIIMessage message, IdentifierCollection identifierCollection,
                                      MotorolaTypeIIChannel channel)
     {
-        DecodeEvent existingEvent = mChannelGrantEventMap.get(channel);
+        DecodeEvent existingEvent = getEventRemoveIfStale(channel, message.getTimestamp());
 
         if(existingEvent != null)
         {
@@ -131,13 +132,36 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
 
     public void processGroupUpdate(MotorolaTypeIIMessage message, MotorolaTypeIIChannel channel)
     {
-        DecodeEvent existingEvent = mChannelGrantEventMap.get(channel);
+        DecodeEvent existingEvent = getEventRemoveIfStale(channel, message.getTimestamp());
 
         if(existingEvent != null)
         {
             existingEvent.update(message.getTimestamp());
             broadcast(existingEvent);
         }
+    }
+
+    /**
+     * Retrieves the grant event for the channel, removing it when it is stale relative to the timestamp, the same as
+     * P25TrafficChannelManager.getTrackerRemoveIfStale().  Only events without an allocated traffic channel (e.g. the
+     * start was rejected) are checked, since an allocated channel's event is ended when the channel stops.
+     */
+    private DecodeEvent getEventRemoveIfStale(MotorolaTypeIIChannel channel, long timestamp)
+    {
+        DecodeEvent event = mChannelGrantEventMap.get(channel);
+
+        if(event != null && !mAllocatedTrafficChannelMap.containsKey(channel))
+        {
+            long lastUpdate = event.getTimeEnd() > 0 ? event.getTimeEnd() : event.getTimeStart();
+
+            if(timestamp - lastUpdate > STALE_EVENT_THRESHOLD_MS)
+            {
+                mChannelGrantEventMap.remove(channel);
+                event = null;
+            }
+        }
+
+        return event;
     }
 
     private void createTrafficChannels(Channel parentChannel, DecodeConfigMotorolaTypeII decodeConfig)
@@ -285,7 +309,9 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
                             mAllocatedTrafficChannelMap.remove(rejected);
                             mAvailableTrafficChannelQueue.add(channel);
 
-                            final var event = mChannelGrantEventMap.remove(rejected);
+                            //Leave the event in place (as P25TrafficChannelManager does) so repeated grants for
+                            //this call update the event instead of recreating it and requesting another channel.
+                            final var event = mChannelGrantEventMap.get(rejected);
 
                             if(event != null)
                             {

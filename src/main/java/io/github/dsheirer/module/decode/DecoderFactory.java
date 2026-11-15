@@ -67,6 +67,10 @@ import io.github.dsheirer.module.decode.lj1200.LJ1200MessageFilter;
 import io.github.dsheirer.module.decode.edacs.DecodeConfigEDACS;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoder;
 import io.github.dsheirer.module.decode.edacs.EDACSDecoderState;
+import io.github.dsheirer.module.decode.edacs.EDACSMessageFilter;
+import io.github.dsheirer.module.decode.edacs.EDACSProVoiceAudioModule;
+import io.github.dsheirer.module.decode.edacs.EDACSProVoiceDecoder;
+import io.github.dsheirer.module.decode.edacs.EDACSTrafficChannelManager;
 import io.github.dsheirer.module.decode.moto.BandplanType;
 import io.github.dsheirer.module.decode.moto.DecodeConfigMotorolaTypeII;
 import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoder;
@@ -215,7 +219,8 @@ public class DecoderFactory
                 processP25Phase2(channel, userPreferences, modules, aliasList, trafficChannelManager, channelDescriptor);
                 break;
             case EDACS:
-                processEDACS(userPreferences, channel, modules, aliasList, decodeConfig);
+                processEDACS(userPreferences, channel, modules, aliasList, decodeConfig, trafficChannelManager,
+                    channelDescriptor);
                 break;
             case MOTOROLA_TYPE_II:
                 processMotorolaTypeII(channel, userPreferences, modules, aliasList,
@@ -532,13 +537,62 @@ public class DecoderFactory
      * @param aliasList for the channel
      * @param decodeConfig for the channel
      */
-    private static void processEDACS(UserPreferences userPreferences, Channel channel, List<Module> modules, AliasList aliasList, DecodeConfiguration decodeConfig) {
-        EDACSDecoder decoder = new EDACSDecoder();
-        modules.add(decoder);
-        List<AbstractAudioFilter> filterList = new ArrayList<>();
-        filterList.add(new HighPassAudioFilter());
-        modules.add(new AudioModule(aliasList, filterList));
-        modules.add(new EDACSDecoderState());
+    private static void processEDACS(UserPreferences userPreferences, Channel channel, List<Module> modules,
+                                     AliasList aliasList, DecodeConfiguration decodeConfig,
+                                     TrafficChannelManager trafficChannelManager,
+                                     IChannelDescriptor channelDescriptor) {
+        if(channel.isTrafficChannel())
+        {
+            boolean proVoice = false;
+            int voiceMarker = Integer.parseInt(DecodeConfigEDACS.PROVOICE_VOICE_MARKER_DEFAULT, 16);
+            if(decodeConfig instanceof DecodeConfigEDACS edacsConfig)
+            {
+                proVoice = edacsConfig.getVoiceMode() == DecodeConfigEDACS.VoiceMode.PROVOICE;
+                voiceMarker = edacsConfig.getProVoiceVoiceMarkerValue();
+            }
+            if(proVoice)
+            {
+                // Digital traffic channel: ProVoice frame sync + IMBE 7100 audio via JMBE.
+                modules.add(new EDACSProVoiceDecoder(voiceMarker));
+                EDACSDecoderState decoderState = new EDACSDecoderState(channel,
+                    trafficChannelManager instanceof EDACSTrafficChannelManager edacs ? edacs : null);
+                decoderState.setCurrentChannel(channelDescriptor);
+                modules.add(decoderState);
+                modules.add(new EDACSProVoiceAudioModule(userPreferences, aliasList));
+            }
+            else
+            {
+                // Analog traffic channel: NBFM decoder + audio
+                DecodeConfigNBFM nbfmConfig = new DecodeConfigNBFM();
+                modules.add(new NBFMDecoder(nbfmConfig));
+                modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig, false, Protocol.EDACS));
+                List<AbstractAudioFilter> filterList = new ArrayList<>();
+                filterList.add(new HighPassAudioFilter());
+                modules.add(new AudioModule(aliasList, 0, 60000, filterList));
+            }
+        }
+        else
+        {
+            // Control channel: EDACS trunking decoder + traffic channel manager
+            // (no AudioModule — CC is data-only, audio lives on traffic channels)
+            modules.add(new EDACSDecoder());
+            int trafficChannelPoolSize = decodeConfig instanceof DecodeConfigEDACS edacsConfig ?
+                    edacsConfig.getTrafficChannelPoolSize() : DecodeConfigEDACS.TRAFFIC_CHANNEL_LIMIT_DEFAULT_EDACS;
+            EDACSTrafficChannelManager tcm = new EDACSTrafficChannelManager(trafficChannelPoolSize);
+            tcm.createTrafficChannels(channel, decodeConfig);
+            modules.add(tcm);
+            modules.add(new EDACSDecoderState(channel, tcm));
+
+            //EDACS sites can move the control channel to another LCN.  Rotate through the configured
+            //control channel frequencies when the current one stops producing control messages.
+            if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
+                    sctmf.hasMultipleFrequencies())
+            {
+                List<State> activeStates = new ArrayList<>();
+                activeStates.add(State.CONTROL);
+                modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
+            }
+        }
     }
 
     /**
@@ -844,6 +898,9 @@ public class DecoderFactory
             case DMR:
                 filters.add(new DmrMessageFilterSet());
                 break;
+            case EDACS:
+                filters.add(new EDACSMessageFilter());
+                break;
             case FLEETSYNC2:
                 filters.add(new FleetsyncMessageFilter());
                 break;
@@ -1005,6 +1062,9 @@ public class DecoderFactory
                     DecodeConfigEDACS originalEDACS = (DecodeConfigEDACS)config;
                     DecodeConfigEDACS copyEDACS = new DecodeConfigEDACS();
                     copyEDACS.setLcnFrequencies(originalEDACS.getLcnFrequencies());
+                    copyEDACS.setVoiceMode(originalEDACS.getVoiceMode());
+                    copyEDACS.setTrafficChannelPoolSize(originalEDACS.getTrafficChannelPoolSize());
+                    copyEDACS.setProVoiceVoiceMarker(originalEDACS.getProVoiceVoiceMarker());
                     return copyEDACS;
                 case MOTOROLA_TYPE_II:
                     DecodeConfigMotorolaTypeII originalMoto = (DecodeConfigMotorolaTypeII)config;

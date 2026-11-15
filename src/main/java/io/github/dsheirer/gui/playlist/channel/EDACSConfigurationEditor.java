@@ -38,10 +38,17 @@ import io.github.dsheirer.source.config.SourceConfiguration;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import java.util.ArrayList;
 import java.util.List;
+import javafx.geometry.HPos;
 import javafx.geometry.Insets;
+import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.Spinner;
+import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TextArea;
+import javafx.scene.control.TextField;
+import javafx.scene.control.TextFormatter;
 import javafx.scene.control.TitledPane;
+import javafx.scene.layout.GridPane;
 import javafx.scene.layout.VBox;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,6 +69,9 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     private EventLogConfigurationEditor mEventLogConfigurationEditor;
     private RecordConfigurationEditor mRecordConfigurationEditor;
     private TextArea mLcnFrequencyEditor;
+    private ComboBox<DecodeConfigEDACS.VoiceMode> mVoiceModeComboBox;
+    private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
+    private TextField mVoiceMarkerTextField;
 
     public EDACSConfigurationEditor(PlaylistManager playlistManager, TunerManager tunerManager,
                                      UserPreferences userPreferences, IFilterProcessor filterProcessor)
@@ -106,16 +116,106 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
             vbox.getChildren().add(label);
 
             mLcnFrequencyEditor = new TextArea();
-            mLcnFrequencyEditor.setPrefRowCount(15);
+            mLcnFrequencyEditor.setPrefRowCount(12);
             mLcnFrequencyEditor.setPrefColumnCount(20);
             mLcnFrequencyEditor.setPromptText("851175000\n851225000\n851425000\n...");
             mLcnFrequencyEditor.textProperty().addListener((obs, old, val) -> modifiedProperty().set(true));
             vbox.getChildren().add(mLcnFrequencyEditor);
 
+            GridPane voiceGrid = new GridPane();
+            voiceGrid.setHgap(10);
+            voiceGrid.setVgap(5);
+            voiceGrid.setPadding(new Insets(8, 0, 0, 0));
+
+            Label voiceModeLabel = new Label("Voice Mode");
+            GridPane.setHalignment(voiceModeLabel, HPos.RIGHT);
+            GridPane.setConstraints(voiceModeLabel, 0, 0);
+            voiceGrid.getChildren().add(voiceModeLabel);
+
+            GridPane.setConstraints(getVoiceModeComboBox(), 1, 0);
+            voiceGrid.getChildren().add(getVoiceModeComboBox());
+
+            Label poolSizeLabel = new Label("Traffic Channels");
+            GridPane.setHalignment(poolSizeLabel, HPos.RIGHT);
+            GridPane.setConstraints(poolSizeLabel, 0, 1);
+            voiceGrid.getChildren().add(poolSizeLabel);
+
+            GridPane.setConstraints(getTrafficChannelPoolSizeSpinner(), 1, 1);
+            voiceGrid.getChildren().add(getTrafficChannelPoolSizeSpinner());
+
+            Label voiceMarkerLabel = new Label("ProVoice Voice Marker (hex)");
+            GridPane.setHalignment(voiceMarkerLabel, HPos.RIGHT);
+            GridPane.setConstraints(voiceMarkerLabel, 0, 2);
+            voiceGrid.getChildren().add(voiceMarkerLabel);
+
+            GridPane.setConstraints(getVoiceMarkerTextField(), 1, 2);
+            voiceGrid.getChildren().add(getVoiceMarkerTextField());
+
+            vbox.getChildren().add(voiceGrid);
+
+            Label scopeLabel = new Label("Tested on EDACS Extended Addressing (EA) with ProVoice voice only. Standard/Networked " +
+                "addressing, analog voice and narrowband are untested. The voice marker default is from one system and " +
+                "may differ on others.");
+            scopeLabel.setWrapText(true);
+            scopeLabel.setPadding(new Insets(8, 0, 0, 0));
+            vbox.getChildren().add(scopeLabel);
+
             mDecoderPane.setContent(vbox);
         }
 
         return mDecoderPane;
+    }
+
+    private ComboBox<DecodeConfigEDACS.VoiceMode> getVoiceModeComboBox()
+    {
+        if(mVoiceModeComboBox == null)
+        {
+            mVoiceModeComboBox = new ComboBox<>();
+            mVoiceModeComboBox.getItems().addAll(DecodeConfigEDACS.VoiceMode.values());
+            mVoiceModeComboBox.getSelectionModel().select(DecodeConfigEDACS.VOICE_MODE_DEFAULT);
+            mVoiceModeComboBox.getSelectionModel().selectedItemProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mVoiceModeComboBox;
+    }
+
+    private TextField getVoiceMarkerTextField()
+    {
+        if(mVoiceMarkerTextField == null)
+        {
+            mVoiceMarkerTextField = new TextField();
+            mVoiceMarkerTextField.setPrefColumnCount(4);
+            mVoiceMarkerTextField.setPromptText("none");
+            mVoiceMarkerTextField.setTooltip(new javafx.scene.control.Tooltip(
+                    "16-bit marker (4 hex digits) carried by every ProVoice voice frame on this system. Frames without " +
+                    "it are signalling and are not played. Leave empty to play every frame, then read the MARKER " +
+                    "value from the traffic channel's decoded messages to find it."));
+            //Up to 4 hex digits
+            mVoiceMarkerTextField.setTextFormatter(new TextFormatter<String>(change ->
+                    change.getControlNewText().matches("[0-9a-fA-F]{0,4}") ? change : null));
+            mVoiceMarkerTextField.textProperty().addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mVoiceMarkerTextField;
+    }
+
+    private Spinner<Integer> getTrafficChannelPoolSizeSpinner()
+    {
+        if(mTrafficChannelPoolSizeSpinner == null)
+        {
+            mTrafficChannelPoolSizeSpinner = new Spinner<>();
+            mTrafficChannelPoolSizeSpinner.setTooltip(new javafx.scene.control.Tooltip(
+                    "Maximum simultaneous EDACS traffic channels. Lower values reduce CPU load on busy systems."));
+            mTrafficChannelPoolSizeSpinner.getStyleClass().add(Spinner.STYLE_CLASS_SPLIT_ARROWS_HORIZONTAL);
+            SpinnerValueFactory<Integer> svf = new SpinnerValueFactory.IntegerSpinnerValueFactory(0,
+                    DecodeConfigEDACS.TRAFFIC_CHANNEL_LIMIT_DEFAULT, DecodeConfigEDACS.TRAFFIC_CHANNEL_LIMIT_DEFAULT_EDACS);
+            mTrafficChannelPoolSizeSpinner.setValueFactory(svf);
+            mTrafficChannelPoolSizeSpinner.getValueFactory().valueProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mTrafficChannelPoolSizeSpinner;
     }
 
     private TitledPane getEventLogPane()
@@ -164,7 +264,10 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     {
         if(mSourceConfigurationEditor == null)
         {
-            mSourceConfigurationEditor = new FrequencyEditor(mTunerManager);
+            mSourceConfigurationEditor = new FrequencyEditor(mTunerManager,
+                DecodeConfigEDACS.CHANNEL_ROTATION_DELAY_MINIMUM_MS,
+                DecodeConfigEDACS.CHANNEL_ROTATION_DELAY_MAXIMUM_MS,
+                DecodeConfigEDACS.CHANNEL_ROTATION_DELAY_DEFAULT_MS);
 
             mSourceConfigurationEditor.modifiedProperty()
                 .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
@@ -178,8 +281,12 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         if(mEventLogConfigurationEditor == null)
         {
             List<EventLogType> types = new ArrayList<>();
+            //Same options as the P25 Phase 1, DMR and NXDN editors.  Traffic channels only log the TRAFFIC types
+            //(EventLogManager), so without them EDACS traffic channel events and messages could not be logged.
             types.add(EventLogType.CALL_EVENT);
             types.add(EventLogType.DECODED_MESSAGE);
+            types.add(EventLogType.TRAFFIC_CALL_EVENT);
+            types.add(EventLogType.TRAFFIC_DECODED_MESSAGE);
 
             mEventLogConfigurationEditor = new EventLogConfigurationEditor(types);
             mEventLogConfigurationEditor.setPadding(new Insets(5,5,5,5));
@@ -210,6 +317,9 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         {
             List<RecorderType> types = new ArrayList<>();
             types.add(RecorderType.BASEBAND);
+            types.add(RecorderType.TRAFFIC_BASEBAND);
+            types.add(RecorderType.TRAFFIC_DEMODULATED_AUDIO);
+            types.add(RecorderType.TRAFFIC_MBE_CALL_SEQUENCE);
             mRecordConfigurationEditor = new RecordConfigurationEditor(types);
             mRecordConfigurationEditor.setDisable(true);
             mRecordConfigurationEditor.modifiedProperty()
@@ -223,15 +333,24 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
     protected void setDecoderConfiguration(DecodeConfiguration config)
     {
         mLcnFrequencyEditor.setDisable(config == null);
+        getVoiceModeComboBox().setDisable(config == null);
+        getTrafficChannelPoolSizeSpinner().setDisable(config == null);
+        getVoiceMarkerTextField().setDisable(config == null);
 
         if(config instanceof DecodeConfigEDACS decodeConfigEDACS)
         {
+            getVoiceMarkerTextField().setText(decodeConfigEDACS.getProVoiceVoiceMarker());
             String freqs = decodeConfigEDACS.getLcnFrequencies();
             mLcnFrequencyEditor.setText(freqs != null ? freqs.replace(",", "\n") : "");
+            getVoiceModeComboBox().getSelectionModel().select(decodeConfigEDACS.getVoiceMode());
+            getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfigEDACS.getTrafficChannelPoolSize());
         }
         else
         {
             mLcnFrequencyEditor.setText("");
+            getVoiceMarkerTextField().setText(DecodeConfigEDACS.PROVOICE_VOICE_MARKER_DEFAULT);
+            getVoiceModeComboBox().getSelectionModel().select(DecodeConfigEDACS.VOICE_MODE_DEFAULT);
+            getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(DecodeConfigEDACS.TRAFFIC_CHANNEL_LIMIT_DEFAULT_EDACS);
         }
     }
 
@@ -253,6 +372,9 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
         String text = mLcnFrequencyEditor.getText().trim();
         String csv = text.replaceAll("[\\r\\n]+", ",").replaceAll("\\s", "");
         config.setLcnFrequencies(csv);
+        config.setVoiceMode(getVoiceModeComboBox().getSelectionModel().getSelectedItem());
+        config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
+        config.setProVoiceVoiceMarker(getVoiceMarkerTextField().getText());
 
         getItem().setDecodeConfiguration(config);
     }

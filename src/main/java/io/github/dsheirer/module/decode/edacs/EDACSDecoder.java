@@ -21,9 +21,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * EDACS trunking decoder using edacs-fm-style sync frame detection.
+ * EDACS trunking control channel decoder using edacs-fm-style sync frame detection.
  * Demodulates complex I/Q samples to FM audio, digitizes via AFC threshold,
  * detects sync frame pattern, extracts and BCH-checks messages.
+ *
+ * <p>Tested against an EDACS Extended Addressing (EA) wideband (9600 baud) control channel only.  See
+ * {@link DecodeConfigEDACS} for the tested scope.</p>
  */
 public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Listener<ComplexSamples>,
         ISourceEventListener, IDecoderStateEventProvider
@@ -40,8 +43,9 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
     private final SourceEventProcessor mSourceEventProcessor = new SourceEventProcessor();
 
     private float[] mResampleBuffer = new float[0];
-    private double mResamplePhase = 0;
-    private boolean mResampleReady = false;
+    private double mResampleCursor = 0;
+    private float mLastResampleInput = 0;
+    private boolean mHasLastResampleInput = false;
 
     public EDACSDecoder()
     {
@@ -95,10 +99,15 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
         float[] demodulated = mFMDemodulator.demodulate(filteredI, filteredQ);
 
-        float[] resampled = resample(demodulated, 50000.0, 24000.0);
+        // Resample from the decimated channelizer rate to 48 kHz so EDACS
+        // 9600 baud symbols have exactly 5 samples/symbol, matching DSD-FME's
+        // rtl_fm path and center-sample symbol timing.
+        float[] resampled = resample(demodulated, mDecimatedRate, 48000.0);
 
         mSyncDetector.process(resampled, getMessageListener());
     }
+
+    private double mDecimatedRate = 48000.0;
 
     private void setSampleRate(double sampleRate)
     {
@@ -111,17 +120,20 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         mIDecimationFilter = DecimationFilterFactory.getRealDecimationFilter(decimation);
         mQDecimationFilter = DecimationFilterFactory.getRealDecimationFilter(decimation);
 
-        double decimatedRate = sampleRate / decimation;
+        mDecimatedRate = sampleRate / decimation;
 
-        float[] coefficients = FilterFactory.getLowPass(decimatedRate, 9600, 12000, 60,
+        // 98% of the EDACS signal power is within 6 kHz of the carrier.  The previous 9.6 kHz pass / 12 kHz stop
+        // (after DSD-FME rtl_fm BW:24) let in noise that cost control channel messages; see the same filter in
+        // EDACSProVoiceDecoder for the measurements and the tuner frequency error this tolerates.
+        float[] coefficients = FilterFactory.getLowPass(mDecimatedRate, 6000, 8000, 60,
                 io.github.dsheirer.dsp.window.WindowType.HAMMING, true);
 
         mIBasebandFilter = FilterFactory.getRealFilter(coefficients);
         mQBasebandFilter = FilterFactory.getRealFilter(coefficients);
 
-        mLog.info("EDACS decoder sample rate: " + decimatedRate + " (decimation: " + decimation + ")");
+        mLog.debug("EDACS decoder sample rate: " + mDecimatedRate + " (decimation: " + decimation + ") -> 48 kHz");
 
-        mSyncDetector.setSampleRate(24000.0);
+        mSyncDetector.reset();
     }
 
     public class SourceEventProcessor implements Listener<SourceEvent>
@@ -131,8 +143,8 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
         {
             if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_SAMPLE_RATE_CHANGE)
             {
-                mResamplePhase = 0;
-                mResampleReady = false;
+                mResampleCursor = 0;
+                mHasLastResampleInput = false;
                 setSampleRate(sourceEvent.getValue().doubleValue());
             }
         }
@@ -140,24 +152,38 @@ public class EDACSDecoder extends Decoder implements IComplexSamplesListener, Li
 
     private float[] resample(float[] input, double inputRate, double outputRate)
     {
-        double step = outputRate / inputRate;
-        int estimateLen = (int)(input.length * step) + 2;
+        if(input.length == 0)
+        {
+            return input;
+        }
+
+        if(!mHasLastResampleInput)
+        {
+            mLastResampleInput = input[0];
+            mHasLastResampleInput = true;
+            mResampleCursor = 1.0;
+        }
+
+        double step = inputRate / outputRate;
+        int estimateLen = (int)(input.length / step) + 2;
         if(mResampleBuffer.length < estimateLen)
+        {
             mResampleBuffer = new float[estimateLen];
+        }
 
         int outIdx = 0;
-        for(int i = 0; i < input.length; i++)
+        while(mResampleCursor < input.length)
         {
-            mResamplePhase += step;
-            while(mResamplePhase >= 1.0)
-            {
-                mResamplePhase -= 1.0;
-                if(mResampleReady && outIdx < mResampleBuffer.length)
-                    mResampleBuffer[outIdx++] = input[i];
-                else
-                    mResampleReady = true;
-            }
+            int index = (int)mResampleCursor;
+            double fraction = mResampleCursor - index;
+            float previous = index == 0 ? mLastResampleInput : input[index - 1];
+            float current = input[index];
+            mResampleBuffer[outIdx++] = (float)(previous + (current - previous) * fraction);
+            mResampleCursor += step;
         }
+
+        mResampleCursor -= input.length;
+        mLastResampleInput = input[input.length - 1];
 
         float[] result = new float[outIdx];
         System.arraycopy(mResampleBuffer, 0, result, 0, outIdx);

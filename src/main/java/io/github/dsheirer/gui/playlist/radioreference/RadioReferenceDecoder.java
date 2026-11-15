@@ -509,7 +509,8 @@ public class RadioReferenceDecoder
             case "EDACS":
                 if(flavor != null && (flavor.getName().contentEquals("Narrowband") || flavor.getName().contentEquals("SCAT")))
                 {
-                    return Protocol.EDACS_NB;
+                    //EDACS narrowband is not supported
+                    break;
                 }
                 return Protocol.EDACS;
             case "TETRA":
@@ -593,7 +594,8 @@ public class RadioReferenceDecoder
                 case "EDACS":
                     if(flavor != null && (flavor.getName().contentEquals("Narrowband") || flavor.getName().contentEquals("SCAT")))
                     {
-                        return DecoderType.EDACS_NB;
+                        //EDACS narrowband is not supported
+                        break;
                     }
                     return DecoderType.EDACS;
                 case "TETRA":

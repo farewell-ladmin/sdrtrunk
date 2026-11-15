@@ -358,7 +358,6 @@ public class SiteEditor extends GridPane
                 config.setScrambleParameters(new ScrambleParameters(wacn, system, nac));
                 return config;
             case EDACS:
-            case EDACS_NB:
             {
                 DecodeConfigEDACS edacsConfig = new DecodeConfigEDACS();
                 if(site != null)

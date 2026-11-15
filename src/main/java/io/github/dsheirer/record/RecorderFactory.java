@@ -23,6 +23,7 @@ import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.decode.dmr.audio.DMRCallSequenceRecorder;
 import io.github.dsheirer.module.decode.nxdn.audio.NXDNCallSequenceRecorder;
+import io.github.dsheirer.module.decode.edacs.EDACSProVoiceCallSequenceRecorder;
 import io.github.dsheirer.module.decode.p25.audio.P25P1CallSequenceRecorder;
 import io.github.dsheirer.module.decode.p25.audio.P25P2CallSequenceRecorder;
 import io.github.dsheirer.preference.UserPreferences;
@@ -30,6 +31,7 @@ import io.github.dsheirer.record.binary.BinaryRecorder;
 import io.github.dsheirer.record.wave.ComplexSamplesWaveRecorder;
 import io.github.dsheirer.record.wave.IRecordingStatusListener;
 import io.github.dsheirer.record.wave.NativeBufferWaveRecorder;
+import io.github.dsheirer.record.wave.RealSamplesWaveRecorder;
 import io.github.dsheirer.source.config.SourceConfigTuner;
 import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
 import io.github.dsheirer.source.wave.SDRSharpIQRecording;
@@ -104,6 +106,12 @@ public class RecorderFactory
                                 frequency));
                     }
                     break;
+                case TRAFFIC_DEMODULATED_AUDIO:
+                    if(channel.isTrafficChannel())
+                    {
+                        recorderModules.add(getDemodulatedAudioRecorder(channel.toString(), frequency, userPreferences));
+                    }
+                    break;
                 case MBE_CALL_SEQUENCE:
                     if(channel.isStandardChannel() && channel.getSourceConfiguration() instanceof SourceConfigTuner)
                     {
@@ -124,6 +132,10 @@ public class RecorderFactory
                                 break;
                             case P25_PHASE2:
                                 recorderModules.add(new P25P2CallSequenceRecorder(userPreferences, frequency,
+                                    channel.getSystem(), channel.getSite()));
+                                break;
+                            case EDACS:
+                                recorderModules.add(new EDACSProVoiceCallSequenceRecorder(userPreferences, frequency,
                                     channel.getSystem(), channel.getSite()));
                                 break;
                         }
@@ -148,6 +160,10 @@ public class RecorderFactory
                                 break;
                             case P25_PHASE2:
                                 recorderModules.add(new P25P2CallSequenceRecorder(userPreferences, frequency,
+                                    channel.getSystem(), channel.getSite()));
+                                break;
+                            case EDACS:
+                                recorderModules.add(new EDACSProVoiceCallSequenceRecorder(userPreferences, frequency,
                                     channel.getSystem(), channel.getSite()));
                                 break;
                         }
@@ -215,6 +231,23 @@ public class RecorderFactory
         sb.append(label).append("_baseband");
 
         return new ComplexSamplesWaveRecorder(BASEBAND_SAMPLE_RATE, sb.toString());
+    }
+
+    /**
+     * Constructs a mono demodulated/discriminator audio recorder for use in a processing chain.
+     */
+    public static RealSamplesWaveRecorder getDemodulatedAudioRecorder(String channelName, long frequency, UserPreferences userPreferences)
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.append(getRecordingBasePath(userPreferences));
+        sb.append(File.separator);
+        sb.append(TimeStamp.getTimeStamp("_"));
+        sb.append("_");
+        sb.append(frequency);
+        sb.append("_");
+        sb.append(StringUtils.replaceIllegalCharacters(channelName)).append("_demodulated");
+
+        return new RealSamplesWaveRecorder(48000.0f, sb.toString(), 0.25f);
     }
 
     /**
