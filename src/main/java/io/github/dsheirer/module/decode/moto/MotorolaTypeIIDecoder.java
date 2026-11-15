@@ -45,6 +45,7 @@ public class MotorolaTypeIIDecoder extends Decoder implements IComplexSamplesLis
 
     private float[] mResampleBuffer = new float[0];
     private double mResamplePhase = 0;
+    private float mPreviousSample;
     private boolean mResampleReady = false;
     private double mCurrentDecimatedRate;
 
@@ -153,6 +154,7 @@ public class MotorolaTypeIIDecoder extends Decoder implements IComplexSamplesLis
         if(mResampleBuffer.length < estimateLen)
             mResampleBuffer = new float[estimateLen];
 
+        //Linear interpolation between the previous and current input samples.
         int outIdx = 0;
         for(int i = 0; i < input.length; i++)
         {
@@ -161,10 +163,15 @@ public class MotorolaTypeIIDecoder extends Decoder implements IComplexSamplesLis
             {
                 mResamplePhase -= 1.0;
                 if(mResampleReady && outIdx < mResampleBuffer.length)
-                    mResampleBuffer[outIdx++] = input[i];
+                {
+                    //The output sample lies this fraction of an input sample before the current input sample.
+                    float back = (float)(mResamplePhase / step);
+                    mResampleBuffer[outIdx++] = input[i] + (mPreviousSample - input[i]) * back;
+                }
                 else
                     mResampleReady = true;
             }
+            mPreviousSample = input[i];
         }
 
         float[] result = new float[outIdx];
