@@ -104,8 +104,7 @@ public enum State
             @Override
             public boolean canChangeTo(State state)
             {
-                return state == CALL ||
-                       state == FADE ||
+                return state == FADE ||
                        state == TEARDOWN ||
                        state == RESET;
             }
