@@ -25,7 +25,6 @@ public class DecodeConfigMotorolaTypeII extends DecodeConfiguration
     private double mObtSpacing;
     private int mObtOffset;
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_POOL_SIZE_DEFAULT;
-    private VoiceMode mDefaultVoiceMode = VoiceMode.ANALOG;
 
     /**
      * De-emphasis for a new configuration, chosen by ear on an analog simulcast system.
@@ -107,17 +106,6 @@ public class DecodeConfigMotorolaTypeII extends DecodeConfiguration
         {
             mTrafficChannelPoolSize = poolSize;
         }
-    }
-
-    @JacksonXmlProperty(isAttribute = false, localName = "default_voice_mode")
-    public VoiceMode getDefaultVoiceMode()
-    {
-        return mDefaultVoiceMode;
-    }
-
-    public void setDefaultVoiceMode(VoiceMode voiceMode)
-    {
-        mDefaultVoiceMode = voiceMode != null ? voiceMode : VoiceMode.ANALOG;
     }
 
     /**

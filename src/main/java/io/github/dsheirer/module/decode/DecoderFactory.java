@@ -1079,7 +1079,6 @@ public class DecoderFactory
                     DecodeConfigMotorolaTypeII copyMoto = new DecodeConfigMotorolaTypeII();
                     copyMoto.setBandplanType(originalMoto.getBandplanType());
                     copyMoto.setTrafficChannelPoolSize(originalMoto.getTrafficChannelPoolSize());
-                    copyMoto.setDefaultVoiceMode(originalMoto.getDefaultVoiceMode());
                     copyMoto.setAnalogDeemphasis(originalMoto.getAnalogDeemphasis());
                     if(originalMoto.getBandplanType() == BandplanType.OBT)
                     {

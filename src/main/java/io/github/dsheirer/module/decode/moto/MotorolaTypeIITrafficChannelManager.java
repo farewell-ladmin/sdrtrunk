@@ -16,6 +16,7 @@ import io.github.dsheirer.module.decode.event.IDecodeEvent;
 import io.github.dsheirer.module.decode.event.IDecodeEventProvider;
 import io.github.dsheirer.module.decode.moto.channel.MotorolaTypeIIChannel;
 import io.github.dsheirer.module.decode.moto.message.MotorolaTypeIIMessage;
+import io.github.dsheirer.module.decode.moto.message.MotorolaTypeIIMessageType;
 import io.github.dsheirer.module.decode.traffic.TrafficChannelManager;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.source.config.SourceConfigTuner;
@@ -37,6 +38,7 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
 
     public static final String CHANNEL_START_REJECTED = "CHANNEL START REJECTED";
     public static final String MAX_TRAFFIC_CHANNELS_EXCEEDED = "MAX TRAFFIC CHANNELS EXCEEDED";
+    public static final String DIGITAL_VOICE_NOT_SUPPORTED = "DIGITAL VOICE NOT SUPPORTED";
 
     private Queue<Channel> mAvailableTrafficChannelQueue = new ConcurrentLinkedQueue<>();
     private List<Channel> mManagedTrafficChannels;
@@ -103,6 +105,15 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
                 .build();
 
         mChannelGrantEventMap.put(channel, grantEvent);
+
+        //Digital voice isn't decoded.  The analog decoder would play it as noise, so the call is reported only.
+        if(message.getMessageType() == MotorolaTypeIIMessageType.DIGITAL_GROUP_GRANT ||
+            message.getMessageType() == MotorolaTypeIIMessageType.DIGITAL_PRIVATE_CALL)
+        {
+            grantEvent.setDetails(DIGITAL_VOICE_NOT_SUPPORTED);
+            broadcast(grantEvent);
+            return;
+        }
 
         if(channel.getDownlinkFrequency() == 0)
         {
