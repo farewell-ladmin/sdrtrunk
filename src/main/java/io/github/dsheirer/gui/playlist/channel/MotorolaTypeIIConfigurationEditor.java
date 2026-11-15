@@ -27,6 +27,7 @@ import io.github.dsheirer.gui.playlist.source.SourceConfigurationEditor;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.config.AuxDecodeConfiguration;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
+import io.github.dsheirer.module.decode.moto.AnalogDeemphasis;
 import io.github.dsheirer.module.decode.moto.BandplanType;
 import io.github.dsheirer.module.decode.moto.DecodeConfigMotorolaTypeII;
 import io.github.dsheirer.module.decode.moto.VoiceMode;
@@ -78,6 +79,7 @@ public class MotorolaTypeIIConfigurationEditor extends ChannelConfigurationEdito
     private Label mObtOffsetLabel;
     private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
     private ComboBox<VoiceMode> mVoiceModeComboBox;
+    private ComboBox<AnalogDeemphasis> mAnalogDeemphasisComboBox;
 
     public MotorolaTypeIIConfigurationEditor(PlaylistManager playlistManager, TunerManager tunerManager,
                                               UserPreferences userPreferences, IFilterProcessor filterProcessor)
@@ -147,6 +149,14 @@ public class MotorolaTypeIIConfigurationEditor extends ChannelConfigurationEdito
 
             GridPane.setConstraints(getVoiceModeComboBox(), 1, row);
             gridPane.getChildren().add(getVoiceModeComboBox());
+
+            Label deemphasisLabel = new Label("Analog De-emphasis");
+            GridPane.setHalignment(deemphasisLabel, HPos.RIGHT);
+            GridPane.setConstraints(deemphasisLabel, 2, row);
+            gridPane.getChildren().add(deemphasisLabel);
+
+            GridPane.setConstraints(getAnalogDeemphasisComboBox(), 3, row);
+            gridPane.getChildren().add(getAnalogDeemphasisComboBox());
 
             row++;
 
@@ -382,6 +392,23 @@ public class MotorolaTypeIIConfigurationEditor extends ChannelConfigurationEdito
         return mVoiceModeComboBox;
     }
 
+    private ComboBox<AnalogDeemphasis> getAnalogDeemphasisComboBox()
+    {
+        if(mAnalogDeemphasisComboBox == null)
+        {
+            mAnalogDeemphasisComboBox = new ComboBox<>();
+            mAnalogDeemphasisComboBox.getItems().addAll(AnalogDeemphasis.values());
+            mAnalogDeemphasisComboBox.getSelectionModel().select(DecodeConfigMotorolaTypeII.ANALOG_DEEMPHASIS_DEFAULT);
+            mAnalogDeemphasisComboBox.setTooltip(new Tooltip("De-emphasis for analog voice.  More hides more of " +
+                "the noise from simulcast fades and dulls the voice more.  Settings other than None also remove " +
+                "audio above 3 kHz.  Takes effect on the next call."));
+            mAnalogDeemphasisComboBox.getSelectionModel().selectedItemProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mAnalogDeemphasisComboBox;
+    }
+
     private void updateObtFieldsVisibility()
     {
         boolean obtSelected = mBandplanComboBox != null &&
@@ -425,6 +452,7 @@ public class MotorolaTypeIIConfigurationEditor extends ChannelConfigurationEdito
         getTrafficChannelPoolSizeSpinner().setDisable(config == null);
         getBandplanComboBox().setDisable(config == null);
         getVoiceModeComboBox().setDisable(config == null);
+        getAnalogDeemphasisComboBox().setDisable(config == null);
 
         if(config instanceof DecodeConfigMotorolaTypeII decodeConfig)
         {
@@ -434,6 +462,7 @@ public class MotorolaTypeIIConfigurationEditor extends ChannelConfigurationEdito
             getObtOffsetField().setText(String.valueOf(decodeConfig.getObtOffset()));
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfig.getTrafficChannelPoolSize());
             getVoiceModeComboBox().getSelectionModel().select(decodeConfig.getDefaultVoiceMode());
+            getAnalogDeemphasisComboBox().getSelectionModel().select(decodeConfig.getAnalogDeemphasis());
         }
         else
         {
@@ -443,6 +472,7 @@ public class MotorolaTypeIIConfigurationEditor extends ChannelConfigurationEdito
             getObtOffsetField().setText("");
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(4);
             getVoiceModeComboBox().getSelectionModel().select(VoiceMode.ANALOG);
+            getAnalogDeemphasisComboBox().getSelectionModel().select(DecodeConfigMotorolaTypeII.ANALOG_DEEMPHASIS_DEFAULT);
         }
 
         updateObtFieldsVisibility();
@@ -505,6 +535,7 @@ public class MotorolaTypeIIConfigurationEditor extends ChannelConfigurationEdito
 
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setDefaultVoiceMode(getVoiceModeComboBox().getSelectionModel().getSelectedItem());
+        config.setAnalogDeemphasis(getAnalogDeemphasisComboBox().getSelectionModel().getSelectedItem());
 
         getItem().setDecodeConfiguration(config);
     }

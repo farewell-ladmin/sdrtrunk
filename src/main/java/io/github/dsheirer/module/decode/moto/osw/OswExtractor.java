@@ -8,18 +8,23 @@ import io.github.dsheirer.module.decode.moto.message.MotorolaTypeIIMessageFactor
 import io.github.dsheirer.module.decode.moto.message.OswQueue;
 import io.github.dsheirer.module.decode.moto.message.OswQueue.OswEntry;
 import io.github.dsheirer.sample.Listener;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.List;
 
+/**
+ * Extracts outbound signalling words (OSW) from 3,600 baud demodulated samples.
+ *
+ * The symbol timing is not recovered.  A framer runs on each sample phase of a symbol and each OSW is taken from
+ * whichever phase decodes it first.  A single fixed phase drifts against the symbol clock of the transmitter and
+ * loses the control channel for several seconds each time the sampling point crosses the symbol edges.
+ */
 public class OswExtractor
 {
-    private static final Logger mLog = LoggerFactory.getLogger(OswExtractor.class);
-
     private static final double BAUD_RATE = 3600.0;
     private static final int SYNC_WORD = 0xAC;
+    private static final int SYNC_BITS = 8;
     private static final int PAYLOAD_BITS = 76;
+    private static final int FRAME_BITS = PAYLOAD_BITS + SYNC_BITS;
     private static final int INFO_BITS = 38;
     private static final int DATA_BITS = 27;
     private static final int CRC_BITS = 10;
@@ -30,25 +35,20 @@ public class OswExtractor
     private static final int CMD_XOR = 0xCD5;
     private static final int CRC_INIT = 0x0393;
     private static final int CRC_POLY = 0x0225;
-    private static final int CRC_MASK = 0x3FF;
 
     private static final double AFC_ALPHA = 0.0005;
-    private static final int MAX_BAD_OSW = 3;
 
-    private double mSamplesPerSymbol;
-    private double mClockPhase;
-    private float mSampleAccum;
+    private int mPhases;
+    private int mFrameSamples;
+    private Framer[] mFramers = new Framer[0];
+    private float[] mSymbolWindow = new float[0];
+    private int mSymbolWindowPointer;
+    private float mSymbolSum;
     private double mAfc;
+    private long mSampleIndex;
+    private long mLastSlotSampleIndex;
+    private int mConsecutiveMissedOsw;
 
-    private int mSyncShiftReg;
-    private int mPayloadBitCount;
-    private int mTrailingSyncBitCount;
-    private int mTrailingSyncShiftReg;
-    private final int[] mPayloadBuffer = new int[PAYLOAD_BITS];
-    private boolean mCollecting;
-    private boolean mCollectingTrailingSync;
-
-    private int mConsecutiveBadOsw;
     private final OswQueue mOswQueue;
     private final Bandplan mBandplan;
 
@@ -58,103 +58,155 @@ public class OswExtractor
         mOswQueue = new OswQueue(bandplan);
     }
 
+    /**
+     * Sets the sample rate, which must be a whole number of samples per symbol.
+     */
     public void setSampleRate(double sampleRate)
     {
-        mSamplesPerSymbol = sampleRate / BAUD_RATE;
-        mClockPhase = 0;
-        mSampleAccum = 0;
+        mPhases = Math.max(1, (int)Math.round(sampleRate / BAUD_RATE));
+        mFrameSamples = FRAME_BITS * mPhases;
+        mFramers = new Framer[mPhases];
+
+        for(int x = 0; x < mPhases; x++)
+        {
+            mFramers[x] = new Framer();
+        }
+
+        mSymbolWindow = new float[mPhases];
+        mSymbolWindowPointer = 0;
+        mSymbolSum = 0;
         mAfc = 0;
-        mSyncShiftReg = 0;
-        mPayloadBitCount = 0;
-        mTrailingSyncBitCount = 0;
-        mTrailingSyncShiftReg = 0;
-        mCollecting = false;
-        mCollectingTrailingSync = false;
-        mConsecutiveBadOsw = 0;
-        mLog.info("OSW extractor sample rate: " + sampleRate + " samples/symbol: " + mSamplesPerSymbol);
+        mSampleIndex = 0;
+        mLastSlotSampleIndex = 0;
+        mConsecutiveMissedOsw = 0;
     }
 
     public void process(float[] samples, Listener<IMessage> messageListener)
     {
         for(float sample : samples)
         {
-            mSampleAccum += (sample - mAfc);
-            mClockPhase += 1.0;
+            mAfc += AFC_ALPHA * (sample - mAfc);
+            float corrected = (float)(sample - mAfc);
 
-            if(mClockPhase >= mSamplesPerSymbol)
+            //Sum of the most recent symbol period of samples, which is the symbol for the phase that ends here.
+            mSymbolSum += corrected - mSymbolWindow[mSymbolWindowPointer];
+            mSymbolWindow[mSymbolWindowPointer] = corrected;
+            mSymbolWindowPointer++;
+
+            if(mSymbolWindowPointer >= mPhases)
             {
-                int bit = (mSampleAccum >= 0) ? 1 : 0;
-                mAfc += AFC_ALPHA * mSampleAccum;
-                mSampleAccum = 0;
-                mClockPhase -= mSamplesPerSymbol;
+                mSymbolWindowPointer = 0;
 
-                processBit(bit, messageListener);
+                //Recompute to stop rounding error building up in the running sum.
+                float sum = 0;
+
+                for(float value : mSymbolWindow)
+                {
+                    sum += value;
+                }
+
+                mSymbolSum = sum;
             }
+
+            Framer framer = mFramers[(int)(mSampleIndex % mPhases)];
+
+            if(framer.process(mSymbolSum >= 0 ? 1 : 0))
+            {
+                //Adjacent phases decode the same OSW within a few samples of each other.  Take the first.
+                if(mSampleIndex - mLastSlotSampleIndex > mFrameSamples / 2)
+                {
+                    processFrame(framer.mPayloadBuffer, messageListener);
+                }
+            }
+            else if(mSampleIndex - mLastSlotSampleIndex > mFrameSamples + mFrameSamples / 2)
+            {
+                //No phase decoded an OSW in this slot.
+                mLastSlotSampleIndex += mFrameSamples;
+                processMissedOsw(messageListener);
+            }
+
+            mSampleIndex++;
         }
     }
 
-    private void processBit(int bit, Listener<IMessage> messageListener)
+    /**
+     * Frames the bits of one sample phase: sync word, payload, then the sync word of the following OSW.
+     */
+    private static class Framer
     {
-        if(mCollecting)
+        private int mSyncShiftReg;
+        private int mPayloadBitCount;
+        private int mTrailingSyncBitCount;
+        private int mTrailingSyncShiftReg;
+        private final int[] mPayloadBuffer = new int[PAYLOAD_BITS];
+        private boolean mCollecting;
+        private boolean mCollectingTrailingSync;
+
+        /**
+         * Processes the bit.
+         * @return true when the payload buffer holds a complete frame that is followed by a sync word.
+         */
+        public boolean process(int bit)
         {
-            if(mCollectingTrailingSync)
+            if(mCollecting)
             {
-                mTrailingSyncShiftReg = ((mTrailingSyncShiftReg << 1) | bit) & 0xFF;
-                mTrailingSyncBitCount++;
-
-                if(mTrailingSyncBitCount >= 8)
+                if(mCollectingTrailingSync)
                 {
-                    if(mTrailingSyncShiftReg == SYNC_WORD)
-                    {
-                        processFrame(messageListener);
+                    mTrailingSyncShiftReg = ((mTrailingSyncShiftReg << 1) | bit) & 0xFF;
+                    mTrailingSyncBitCount++;
 
-                        // The trailing sync is also the leading sync for the next OSW.
-                        mCollecting = true;
-                        mCollectingTrailingSync = false;
-                        mPayloadBitCount = 0;
-                        mTrailingSyncBitCount = 0;
-                        mTrailingSyncShiftReg = 0;
-                        mSyncShiftReg = SYNC_WORD;
-                    }
-                    else
+                    if(mTrailingSyncBitCount >= SYNC_BITS)
                     {
-                        processBadOsw(messageListener, "end sync failure");
-                        mCollecting = false;
                         mCollectingTrailingSync = false;
                         mPayloadBitCount = 0;
                         mTrailingSyncBitCount = 0;
+
+                        if(mTrailingSyncShiftReg == SYNC_WORD)
+                        {
+                            //The trailing sync is also the leading sync for the next OSW.
+                            mTrailingSyncShiftReg = 0;
+                            mSyncShiftReg = SYNC_WORD;
+                            return true;
+                        }
+
+                        mCollecting = false;
                         mSyncShiftReg = mTrailingSyncShiftReg;
+                        mTrailingSyncShiftReg = 0;
+                    }
+                }
+                else
+                {
+                    mPayloadBuffer[mPayloadBitCount++] = bit;
+
+                    if(mPayloadBitCount >= PAYLOAD_BITS)
+                    {
+                        mCollectingTrailingSync = true;
+                        mTrailingSyncBitCount = 0;
                         mTrailingSyncShiftReg = 0;
                     }
                 }
             }
             else
             {
-                mPayloadBuffer[mPayloadBitCount++] = bit;
+                mSyncShiftReg = ((mSyncShiftReg << 1) | bit) & 0xFF;
 
-                if(mPayloadBitCount >= PAYLOAD_BITS)
+                if(mSyncShiftReg == SYNC_WORD)
                 {
-                    mCollectingTrailingSync = true;
-                    mTrailingSyncBitCount = 0;
-                    mTrailingSyncShiftReg = 0;
+                    mCollecting = true;
+                    mPayloadBitCount = 0;
                 }
             }
-        }
-        else
-        {
-            mSyncShiftReg = ((mSyncShiftReg << 1) | bit) & 0xFF;
 
-            if(mSyncShiftReg == SYNC_WORD)
-            {
-                mCollecting = true;
-                mPayloadBitCount = 0;
-            }
+            return false;
         }
     }
 
-    private void processFrame(Listener<IMessage> messageListener)
+    /**
+     * Decodes the frame and queues the OSW when it passes the CRC.  A frame that fails is left for another phase.
+     */
+    private void processFrame(int[] payload, Listener<IMessage> messageListener)
     {
-        int[] deinterleaved = deinterleave();
+        int[] deinterleaved = deinterleave(payload);
         int[] info = new int[INFO_BITS];
         int[] parity = new int[INFO_BITS];
 
@@ -164,18 +216,15 @@ public class OswExtractor
             parity[i] = deinterleaved[2 * i + 1];
         }
 
-        int correctedBits = correctErrors(info, parity);
+        correctErrors(info, parity);
 
-        int crcAccum = computeCrc(info);
-        int receivedCrc = extractReceivedCrc(info);
-
-        if(crcAccum != receivedCrc)
+        if(computeCrc(info) != extractReceivedCrc(info))
         {
-            processBadOsw(messageListener, "CRC failure");
             return;
         }
 
-        mConsecutiveBadOsw = 0;
+        mLastSlotSampleIndex = mSampleIndex;
+        mConsecutiveMissedOsw = 0;
 
         int address = 0;
         for(int i = 0; i < 16; i++)
@@ -200,17 +249,18 @@ public class OswExtractor
         processQueue(messageListener);
     }
 
-    private void processBadOsw(Listener<IMessage> messageListener, String reason)
+    /**
+     * Marks a missed OSW in the queue so that a multi-OSW message is not assembled across the gap.
+     */
+    private void processMissedOsw(Listener<IMessage> messageListener)
     {
-        mConsecutiveBadOsw++;
-        mOswQueue.addReset();
-
-        if(mConsecutiveBadOsw >= MAX_BAD_OSW)
+        //Once the queue holds nothing but markers there is nothing left to flush.
+        if(mConsecutiveMissedOsw < OswQueue.QUEUE_SIZE)
         {
-            mLog.warn("OSW: " + mConsecutiveBadOsw + " consecutive " + reason + "s");
+            mConsecutiveMissedOsw++;
+            mOswQueue.addReset();
+            processQueue(messageListener);
         }
-
-        processQueue(messageListener);
     }
 
     private void processQueue(Listener<IMessage> messageListener)
@@ -228,12 +278,12 @@ public class OswExtractor
         }
     }
 
-    private int[] deinterleave()
+    private int[] deinterleave(int[] payload)
     {
         int[] deinterleaved = new int[PAYLOAD_BITS];
         for(int i = 0; i < PAYLOAD_BITS; i++)
         {
-            deinterleaved[i] = mPayloadBuffer[(i % INTERLEAVE_COLS) * INTERLEAVE_ROWS + (i / INTERLEAVE_COLS)];
+            deinterleaved[i] = payload[(i % INTERLEAVE_COLS) * INTERLEAVE_ROWS + (i / INTERLEAVE_COLS)];
         }
         return deinterleaved;
     }
@@ -261,7 +311,7 @@ public class OswExtractor
         return corrected;
     }
 
-    private int computeCrc(int[] info)
+    static int computeCrc(int[] info)
     {
         // OP25 CRC algorithm - shift right with polynomial 0x0225
         int crcAccum = CRC_INIT;  // 0x0393

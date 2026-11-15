@@ -22,7 +22,6 @@ import org.slf4j.LoggerFactory;
 public class MotorolaTypeIIDecoderState extends DecoderState
 {
     private final static Logger mLog = LoggerFactory.getLogger(MotorolaTypeIIDecoderState.class);
-    private static final int STATS_LOG_INTERVAL = 1000;
     private static final double[] CONNECT_TONES = {105.88, 76.60, 83.72, 90.00, 97.30, 116.13, 128.57, 138.46};
 
     private final MotorolaTypeIITrafficChannelManager mTrafficChannelManager;
@@ -104,15 +103,11 @@ public class MotorolaTypeIIDecoderState extends DecoderState
         {
             mCrcErrors++;
             mTotalMessagesDecoded++;
-            logStatsIfDue();
-            mLog.debug("Moto T2 CRC error: {}", moto);
             return;
         }
 
         mTotalMessagesDecoded++;
         MotorolaTypeIIMessageType type = moto.getMessageType();
-
-        mLog.info("Moto T2 RX: {}", moto);
 
         switch(type)
         {
@@ -145,8 +140,6 @@ public class MotorolaTypeIIDecoderState extends DecoderState
                 broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
                 break;
         }
-
-        logStatsIfDue();
     }
 
     private void processChannelGrant(MotorolaTypeIIMessage message)
@@ -176,9 +169,6 @@ public class MotorolaTypeIIDecoderState extends DecoderState
                 .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
                 .build();
         broadcast(event);
-
-        mLog.info("Moto T2 GRANT: {} TG:{} CH:{} ({})", mode,
-                String.format("0x%04X", talkgroup), String.format("0x%03X", channelNumber), freqStr);
 
         if(mTrafficChannelManager != null)
         {
@@ -272,15 +262,10 @@ public class MotorolaTypeIIDecoderState extends DecoderState
 
         if(opcode == 1)
         {
-            boolean typeII = (data & 0x1000) != 0;
-            int dispatchTimeout = (data & 0x0E00) >> 9;
             int connectToneIndex = (data & 0x00E0) >> 5;
-            int interconnectTimeout = data & 0x001F;
             double connectTone = CONNECT_TONES[connectToneIndex];
 
             setConnectTone(connectTone);
-            mLog.debug("Moto T2 {} type={} connectTone={} dispatchTimeout={} interconnectTimeout={}",
-                    message.getMessageType(), typeII ? "II" : "I", connectTone, dispatchTimeout, interconnectTimeout);
         }
 
         broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
@@ -291,18 +276,7 @@ public class MotorolaTypeIIDecoderState extends DecoderState
         int systemId = message.getAddress();
         mSystemId = systemId;
         mSiteId = 0;
-        mLog.info("Moto T2 CONTROL CHANNEL: System 0x{}", String.format("%04X", systemId));
         broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CONTROL));
-    }
-
-    private void logStatsIfDue()
-    {
-        if(mTotalMessagesDecoded > 0 && mTotalMessagesDecoded % STATS_LOG_INTERVAL == 0)
-        {
-            mLog.info("Moto T2 stats: messages={} CRC_errors={} sys=0x{} site={}",
-                    mTotalMessagesDecoded, mCrcErrors,
-                    String.format("%04X", mSystemId), mSiteId);
-        }
     }
 
     @Override

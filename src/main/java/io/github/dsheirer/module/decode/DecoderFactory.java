@@ -71,11 +71,14 @@ import io.github.dsheirer.module.decode.edacs.EDACSMessageFilter;
 import io.github.dsheirer.module.decode.edacs.EDACSProVoiceAudioModule;
 import io.github.dsheirer.module.decode.edacs.EDACSProVoiceDecoder;
 import io.github.dsheirer.module.decode.edacs.EDACSTrafficChannelManager;
+import io.github.dsheirer.module.decode.moto.AnalogDeemphasis;
 import io.github.dsheirer.module.decode.moto.BandplanType;
 import io.github.dsheirer.module.decode.moto.DecodeConfigMotorolaTypeII;
 import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoder;
 import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoderState;
+import io.github.dsheirer.module.decode.moto.MotorolaTypeIIAnalogAudioFilter;
 import io.github.dsheirer.module.decode.moto.MotorolaTypeIITrafficChannelManager;
+import io.github.dsheirer.module.decode.moto.MotorolaTypeIITrafficDecoderState;
 import io.github.dsheirer.module.decode.ltrnet.DecodeConfigLTRNet;
 import io.github.dsheirer.module.decode.ltrnet.LTRNetDecoder;
 import io.github.dsheirer.module.decode.ltrnet.LTRNetDecoderState;
@@ -608,9 +611,14 @@ public class DecoderFactory
         {
             DecodeConfigNBFM nbfmConfig = new DecodeConfigNBFM();
             modules.add(new NBFMDecoder(nbfmConfig));
-            modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig, false, Protocol.MOTOROLA_TYPE_II));
+            modules.add(new MotorolaTypeIITrafficDecoderState(channel.getName(), nbfmConfig));
             List<AbstractAudioFilter> filterList = new ArrayList<>();
             filterList.add(new HighPassAudioFilter());
+
+            if(decodeConfig.getAnalogDeemphasis() != AnalogDeemphasis.NONE)
+            {
+                filterList.add(new MotorolaTypeIIAnalogAudioFilter(decodeConfig.getAnalogDeemphasis()));
+            }
             modules.add(new AudioModule(aliasList, 0, 60000, filterList));
         }
         else
@@ -1072,6 +1080,7 @@ public class DecoderFactory
                     copyMoto.setBandplanType(originalMoto.getBandplanType());
                     copyMoto.setTrafficChannelPoolSize(originalMoto.getTrafficChannelPoolSize());
                     copyMoto.setDefaultVoiceMode(originalMoto.getDefaultVoiceMode());
+                    copyMoto.setAnalogDeemphasis(originalMoto.getAnalogDeemphasis());
                     if(originalMoto.getBandplanType() == BandplanType.OBT)
                     {
                         copyMoto.setObtBaseFrequency(originalMoto.getObtBaseFrequency());
