@@ -76,6 +76,7 @@ import io.github.dsheirer.module.decode.moto.DecodeConfigMotorolaTypeII;
 import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoder;
 import io.github.dsheirer.module.decode.moto.MotorolaTypeIIDecoderState;
 import io.github.dsheirer.module.decode.moto.MotorolaTypeIITrafficChannelManager;
+import io.github.dsheirer.module.decode.moto.MotorolaTypeIITrafficDecoderState;
 import io.github.dsheirer.module.decode.ltrnet.DecodeConfigLTRNet;
 import io.github.dsheirer.module.decode.ltrnet.LTRNetDecoder;
 import io.github.dsheirer.module.decode.ltrnet.LTRNetDecoderState;
@@ -608,7 +609,7 @@ public class DecoderFactory
         {
             DecodeConfigNBFM nbfmConfig = new DecodeConfigNBFM();
             modules.add(new NBFMDecoder(nbfmConfig));
-            modules.add(new NBFMDecoderState(channel.getName(), nbfmConfig, false, Protocol.MOTOROLA_TYPE_II));
+            modules.add(new MotorolaTypeIITrafficDecoderState(channel.getName(), nbfmConfig));
             List<AbstractAudioFilter> filterList = new ArrayList<>();
             filterList.add(new HighPassAudioFilter());
             modules.add(new AudioModule(aliasList, 0, 60000, filterList));

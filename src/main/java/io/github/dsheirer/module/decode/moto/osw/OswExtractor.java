@@ -311,7 +311,7 @@ public class OswExtractor
         return corrected;
     }
 
-    private int computeCrc(int[] info)
+    static int computeCrc(int[] info)
     {
         // OP25 CRC algorithm - shift right with polynomial 0x0225
         int crcAccum = CRC_INIT;  // 0x0393
