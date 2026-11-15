@@ -27,6 +27,12 @@ public class DecodeConfigMotorolaTypeII extends DecodeConfiguration
     private int mTrafficChannelPoolSize = TRAFFIC_CHANNEL_POOL_SIZE_DEFAULT;
     private VoiceMode mDefaultVoiceMode = VoiceMode.ANALOG;
 
+    /**
+     * De-emphasis for a new configuration, chosen by ear on an analog simulcast system.
+     */
+    public static final AnalogDeemphasis ANALOG_DEEMPHASIS_DEFAULT = AnalogDeemphasis.US_150;
+    private AnalogDeemphasis mAnalogDeemphasis = ANALOG_DEEMPHASIS_DEFAULT;
+
     public DecodeConfigMotorolaTypeII()
     {
     }
@@ -112,6 +118,20 @@ public class DecodeConfigMotorolaTypeII extends DecodeConfiguration
     public void setDefaultVoiceMode(VoiceMode voiceMode)
     {
         mDefaultVoiceMode = voiceMode != null ? voiceMode : VoiceMode.ANALOG;
+    }
+
+    /**
+     * De-emphasis applied to analog voice on the traffic channels.
+     */
+    @JacksonXmlProperty(isAttribute = false, localName = "analog_deemphasis")
+    public AnalogDeemphasis getAnalogDeemphasis()
+    {
+        return mAnalogDeemphasis;
+    }
+
+    public void setAnalogDeemphasis(AnalogDeemphasis deemphasis)
+    {
+        mAnalogDeemphasis = deemphasis != null ? deemphasis : ANALOG_DEEMPHASIS_DEFAULT;
     }
 
     @JsonIgnore
