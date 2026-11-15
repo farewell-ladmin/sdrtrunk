@@ -103,6 +103,30 @@ public class RadioReferencePlaylistActionsTest
     }
 
     @Test
+    void forkSiteProtocols()
+    {
+        assertEquals(java.util.EnumSet.of(DecoderType.EDACS),
+            RadioReferencePlaylistActions.getSiteDecoderTypes(site("EDACS Networked", "Control")));
+        assertTrue(RadioReferencePlaylistActions.getSiteDecoderTypes(site("EDACS Narrowband", "Control")).isEmpty(),
+            "EDACS narrowband isn't supported");
+        assertTrue(RadioReferencePlaylistActions.getSiteDecoderTypes(site("EDACS SCAT", "Control")).isEmpty(),
+            "EDACS SCAT isn't supported");
+        assertEquals(java.util.EnumSet.of(DecoderType.MOTOROLA_TYPE_II),
+            RadioReferencePlaylistActions.getSiteDecoderTypes(siteWithVoice("Motorola Type II Smartnet", "Analog")));
+        assertEquals(java.util.EnumSet.of(DecoderType.MOTOROLA_TYPE_II),
+            RadioReferencePlaylistActions.getSiteDecoderTypes(siteWithVoice("Motorola Type II Smartzone",
+                "Analog and APCO-25 Common Air Interface")));
+        assertTrue(RadioReferencePlaylistActions.getSiteDecoderTypes(siteWithVoice("Motorola Type II Smartnet",
+            "Motorola Digital (VSELP)")).isEmpty(), "Motorola VSELP voice isn't supported");
+    }
+
+    private static SiteRecord siteWithVoice(String protocol, String voice)
+    {
+        return new SiteRecord(1, "System", protocol, voice, 10, 3, "Syracuse", null, 43.0, -76.0, 10, null, 0, 0,
+            List.of(new SiteRecord.SiteChannel(851_000_000L, 1, "Control")));
+    }
+
+    @Test
     void ltrSitesHaveRepeatersInsteadOfAControlChannel()
     {
         SiteRecord ltr = site("LTR Standard", "", "", "");
@@ -253,7 +277,10 @@ public class RadioReferencePlaylistActionsTest
         motorola.setName("Motorola");
         RadioReferenceDecoder motorolaDecoder = new RadioReferenceDecoder(null, Map.of(1, motorola),
             Map.of(2, phase2), Map.of(3, voice), Map.of());
-        assertNull(RadioReferenceChannelFactory.trunkedSite(motorolaDecoder, system, new SystemInformation(), site),
+        //This fork decodes Motorola Type II control channels, including systems whose voice channels carry P25 CAI
+        Channel motorolaChannel = RadioReferenceChannelFactory.trunkedSite(motorolaDecoder, system,
+            new SystemInformation(), site);
+        assertEquals(DecoderType.MOTOROLA_TYPE_II, motorolaChannel.getDecodeConfiguration().getDecoderType(),
             "Motorola Type II control channel");
     }
 
