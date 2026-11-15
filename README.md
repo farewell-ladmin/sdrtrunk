@@ -48,11 +48,28 @@ This fork started as an attempt to fix P25P1/P2 encryption detection and NBFM sq
 | Decoder state machine | Working | CONTROL/CALL states, identifier tracking, statistics logging |
 | Now Playing integration | Working | Traffic events display correct TG/alias in both Events and Now Playing panels |
 
+### Analog only
+
+Type II here decodes **analog voice only**. It has never been run against digital voice, because the test
+system almost never carries any.
+
+What adding digital voice would take (untested, my understanding of how these systems work):
+
+1. A digital grant puts APCO-25 CAI (IMBE) voice on the traffic channel, with no P25 control channel behind it.
+   The traffic channel would need the P25 Phase 1 decoder and decoder state in place of the NBFM ones, and the
+   JMBE audio module in place of the analog one. That choice is made per grant in
+   `DecoderFactory.processMotorolaTypeII`, which today always builds the analog chain.
+2. `MotorolaTypeIITrafficChannelManager.processChannelGrant` would start a traffic channel for a digital grant
+   and tell the factory which kind it is. Today it reports the grant and returns.
+3. A recording of a digital call on a Type II site to test against. Without one this is guesswork.
+
+Older ASTRO systems that use VSELP voice are a different vocoder, which JMBE does not have.
+
 ### What's Not Working
 
 | Issue | Severity | Notes |
 |-------|----------|-------|
-| Digital traffic channels always use NBFM | High | No P25P1DecoderC4FM path — digital voice not implemented |
+| Digital voice | Not supported | Analog voice only. A digital grant is shown as a call event marked DIGITAL VOICE NOT SUPPORTED and is not followed. See "Analog only" below |
 | GROUP_BUSY / EMERGENCY_BUSY transitions to CONTROL instead of FADE | Medium | Should transition to State.FADE |
 | processStatus() partially implemented | Medium | Connect tone decoded; feature flags not tracked/displayed |
 | Adjacent site tracking / expiry / display | Medium | Messages parsed but not stored or surfaced in UI |
