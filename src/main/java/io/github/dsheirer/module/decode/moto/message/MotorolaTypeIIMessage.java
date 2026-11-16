@@ -15,6 +15,12 @@ import java.util.List;
 
 public class MotorolaTypeIIMessage extends Message
 {
+    /**
+     * Talkgroup status bit that marks an encrypted (SECURENET) call.  The low four bits of a talkgroup address are
+     * status bits: this one is the encryption flag and the low three are the call type (emergency, patch, etc).
+     */
+    public static final int STATUS_ENCRYPTED = 0x8;
+
     private int mAddress;
     private boolean mIsGroup;
     private int mCommand;
@@ -90,6 +96,23 @@ public class MotorolaTypeIIMessage extends Message
         return mMessageType;
     }
 
+    /**
+     * Indicates if this is a group call that the control channel flags as encrypted.  Private calls are addressed to
+     * a radio, which has no status bits, so they are never reported as encrypted.
+     */
+    public boolean isEncrypted()
+    {
+        switch(mMessageType)
+        {
+            case ANALOG_GROUP_GRANT:
+            case DIGITAL_GROUP_GRANT:
+            case GROUP_UPDATE:
+                return (mAddress & STATUS_ENCRYPTED) != 0;
+            default:
+                return false;
+        }
+    }
+
     public void setMessageType(MotorolaTypeIIMessageType messageType)
     {
         mMessageType = messageType;
@@ -118,6 +141,10 @@ public class MotorolaTypeIIMessage extends Message
                     sb.append(" SRC:").append(String.format("0x%04X", mSourceAddress));
                 }
                 sb.append(" CH:").append(String.format("0x%03X", mChannelNumber));
+                if(isEncrypted())
+                {
+                    sb.append(" ENCRYPTED");
+                }
                 break;
             case ANALOG_PRIVATE_CALL:
             case DIGITAL_PRIVATE_CALL:
@@ -131,6 +158,10 @@ public class MotorolaTypeIIMessage extends Message
             case GROUP_UPDATE:
                 sb.append(" TG:").append(String.format("0x%04X", mAddress));
                 sb.append(" CH:").append(String.format("0x%03X", mChannelNumber));
+                if(isEncrypted())
+                {
+                    sb.append(" ENCRYPTED");
+                }
                 break;
             case SYSTEM_ID:
                 sb.append(" SYS:").append(String.format("0x%04X", mAddress));

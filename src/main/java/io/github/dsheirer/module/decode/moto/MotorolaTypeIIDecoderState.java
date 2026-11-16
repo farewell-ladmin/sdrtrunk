@@ -161,10 +161,11 @@ public class MotorolaTypeIIDecoderState extends DecoderState
         String callType = privateCall ? "Private Call" : "Group Grant";
         String addressLabel = privateCall ? " TO:" : " TG:";
         String freqStr = frequencyMHz > 0 ? String.format("%.4f MHz", frequencyMHz) : "unknown freq";
-        DecodeEvent event = DecodeEvent.builder(DecodeEventType.CALL, message.getTimestamp())
+        DecodeEvent event = DecodeEvent.builder(message.isEncrypted() ? DecodeEventType.CALL_GROUP_ENCRYPTED :
+                        DecodeEventType.CALL, message.getTimestamp())
                 .channel(channel)
                 .identifiers(ic)
-                .details(mode + " " + callType + " CH:" + String.format("0x%03X", channelNumber) +
+                .details((message.isEncrypted() ? "ENCRYPTED " : "") + mode + " " + callType + " CH:" + String.format("0x%03X", channelNumber) +
                         addressLabel + String.format("0x%04X", talkgroup) + " " + freqStr)
                 .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
                 .build();
