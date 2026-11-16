@@ -158,6 +158,68 @@ class MotorolaTypeIITrafficChannelManagerTest
     }
 
     @Test
+    void statusBitsAreNotPartOfTheTalkgroup()
+    {
+        for(int status = 0; status <= MotorolaTypeIIMessage.STATUS_MASK; status++)
+        {
+            MotorolaTypeIIMessage message = new MotorolaTypeIIMessage(TALKGROUP | status, true, 0x308,
+                CHANNEL_NUMBER, RADIO, null, true, MotorolaTypeIIMessageType.ANALOG_GROUP_GRANT);
+            assertEquals(TALKGROUP, message.getTalkgroup(), "status " + status);
+            assertEquals(status, message.getStatus());
+            assertEquals(TALKGROUP, message.getIdentifiers().get(0).getValue(), "status " + status);
+        }
+
+        //A radio address has no status bits and is left alone
+        MotorolaTypeIIMessage privateCall = new MotorolaTypeIIMessage(RADIO, false, 0x308, CHANNEL_NUMBER, TALKGROUP,
+            null, true, MotorolaTypeIIMessageType.ANALOG_PRIVATE_CALL);
+        assertEquals(RADIO, privateCall.getTalkgroup());
+        assertEquals(RADIO, privateCall.getIdentifiers().get(0).getValue());
+        assertEquals(0, privateCall.getStatus());
+    }
+
+    @Test
+    void callOptionsDescribeTheStatusBits()
+    {
+        assertEquals("", options(0));
+        assertEquals("EMERGENCY", options(2));
+        assertEquals("PATCH", options(3));
+        assertEquals("ENCRYPTED", options(8));
+        assertEquals("ENCRYPTED EMERGENCY", options(10));
+    }
+
+    private static String options(int status)
+    {
+        return new MotorolaTypeIIMessage(TALKGROUP | status, true, 0x308, CHANNEL_NUMBER, RADIO, null, true,
+            MotorolaTypeIIMessageType.ANALOG_GROUP_GRANT).getCallOptions();
+    }
+
+    @Test
+    void callThatTurnsEmergencyStaysOneCall()
+    {
+        Harness harness = new Harness();
+        List<ChannelEvent> channelEvents = new ArrayList<>();
+        harness.mManager.setChannelEventListener(channelEvents::add);
+
+        harness.grant(MotorolaTypeIIMessageType.ANALOG_GROUP_GRANT);
+        harness.grant(MotorolaTypeIIMessageType.ANALOG_GROUP_GRANT, TALKGROUP | 2);
+
+        assertEquals(1, harness.mStartedFrequencies.size());
+        assertTrue(channelEvents.isEmpty(), "the traffic channel keeps running");
+        assertEquals(harness.mEvents.get(0), harness.mEvents.get(1));
+    }
+
+    @Test
+    void encryptedCallThatTurnsClearIsFollowed()
+    {
+        Harness harness = new Harness();
+        harness.grant(MotorolaTypeIIMessageType.ANALOG_GROUP_GRANT, TALKGROUP | MotorolaTypeIIMessage.STATUS_ENCRYPTED);
+        assertTrue(harness.mStartedFrequencies.isEmpty());
+
+        harness.grant(MotorolaTypeIIMessageType.ANALOG_GROUP_GRANT);
+        assertEquals(1, harness.mStartedFrequencies.size());
+    }
+
+    @Test
     void privateCallIsNeverFlaggedEncrypted()
     {
         //A private call is addressed to a radio, which has no status bits

@@ -85,7 +85,9 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
 
         if(existingEvent != null)
         {
-            if(isSameTalkgroup(identifierCollection, existingEvent.getIdentifierCollection()))
+            //A call that changes between clear and encrypted keeps its talkgroup, so that change is checked as well
+            if(isSameTalkgroup(identifierCollection, existingEvent.getIdentifierCollection()) &&
+                message.isEncrypted() == (existingEvent.getEventType() == DecodeEventType.CALL_GROUP_ENCRYPTED))
             {
                 existingEvent.update(message.getTimestamp());
                 broadcast(existingEvent);
@@ -101,7 +103,8 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
         DecodeEvent grantEvent = DecodeEvent.builder(message.isEncrypted() ? DecodeEventType.CALL_GROUP_ENCRYPTED :
                         DecodeEventType.CALL, message.getTimestamp())
                 .channel(channel)
-                .details("Traffic Channel Grant")
+                .details(message.getCallOptions().isEmpty() ? "Traffic Channel Grant" :
+                        "Traffic Channel Grant " + message.getCallOptions())
                 .identifiers(identifierCollection)
                 .protocol(io.github.dsheirer.protocol.Protocol.MOTOROLA_TYPE_II)
                 .build();
@@ -112,7 +115,7 @@ public class MotorolaTypeIITrafficChannelManager extends TrafficChannelManager i
         //the call is reported and not followed.
         if(message.isEncrypted())
         {
-            grantEvent.setDetails(ENCRYPTED);
+            grantEvent.setDetails(message.getCallOptions());
             broadcast(grantEvent);
             return;
         }
