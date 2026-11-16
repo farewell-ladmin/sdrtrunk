@@ -448,11 +448,9 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
         mTrafficChannelManager.processP1TrafficCurrentUser(getCurrentFrequency(), getCurrentChannel(), decodeEventType,
                 serviceOptions, mic, timestamp, null, lcw.toString());
 
-        //Only enter the ENCRYPTED state once the HDU/LDU2 algorithm ID has confirmed it.  The ENCRYPTED state can't
-        //change back to CALL, so entering it on the link control flag alone (ie late entry without the HDU) leaves a
-        //clear call that some radios mis-flag stuck in ENCRYPTED.  The audio module holds audio until the HDU/LDU2
-        //establishes the encryption state, so the CALL state here never releases encrypted audio.
-        if(serviceOptions.isEncrypted() && mCallEncryptedByAlgorithm != null)
+        //TEST BUILD ONLY: the #2651 check (mCallEncryptedByAlgorithm != null) is removed so that this behaves like
+        //upstream before #2651, to test what a mis-flagged late-entry call does.  Do not merge.
+        if(serviceOptions.isEncrypted())
         {
             broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.ENCRYPTED));
         }
