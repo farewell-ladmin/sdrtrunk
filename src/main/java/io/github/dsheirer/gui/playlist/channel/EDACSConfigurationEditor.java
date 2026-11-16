@@ -155,7 +155,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(getVoiceMarkerTextField(), 1, 2);
             voiceGrid.getChildren().add(getVoiceMarkerTextField());
 
-            Label eskLabel = new Label("EDACS Security Key (ESK)");
+            Label eskLabel = new Label("ESK");
             GridPane.setHalignment(eskLabel, HPos.RIGHT);
             GridPane.setConstraints(eskLabel, 0, 3);
             voiceGrid.getChildren().add(eskLabel);
@@ -167,7 +167,7 @@ public class EDACSConfigurationEditor extends ChannelConfigurationEditor
 
             Label scopeLabel = new Label("Tested on EDACS Extended Addressing (EA) with ProVoice voice only. Standard/Networked " +
                 "addressing, analog voice and narrowband are untested. The voice marker default is from one system and " +
-                "may differ on others. ESK is untested on a live system.");
+                "may differ on others.");
             scopeLabel.setWrapText(true);
             scopeLabel.setPadding(new Insets(8, 0, 0, 0));
             vbox.getChildren().add(scopeLabel);
