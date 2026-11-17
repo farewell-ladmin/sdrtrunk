@@ -24,10 +24,13 @@ import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.dsp.gain.NonClippingGain;
 import io.github.dsheirer.message.IMessage;
+import io.github.dsheirer.module.decode.p25.phase1.P25P1EncryptionSyncTracker;
 import io.github.dsheirer.module.decode.p25.phase1.message.hdu.HDUMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU1Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU2Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDUMessage;
+import io.github.dsheirer.module.decode.p25.phase1.message.tdu.TDULCMessage;
+import io.github.dsheirer.module.decode.p25.phase1.message.tdu.TDUMessage;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.sample.Listener;
 import java.util.ArrayList;
@@ -35,8 +38,7 @@ import java.util.List;
 
 public class P25P1AudioModule extends ImbeAudioModule
 {
-    private boolean mEncryptedCall = false;
-    private boolean mEncryptedCallStateEstablished = false;
+    private final P25P1EncryptionSyncTracker mEncryptionTracker = new P25P1EncryptionSyncTracker();
 
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private List<LDUMessage> mCachedLDUMessages = new ArrayList<>();
@@ -75,56 +77,82 @@ public class P25P1AudioModule extends ImbeAudioModule
      * LDU1 message is received without a preceding HDU message, then the LDU1 message is cached until the first
      * LDU2 message is received and the encryption state can be determined. Both the LDU1 and the LDU2 message are
      * then processed for audio if the call is unencrypted.
+     *
+     * The encryption state follows every valid HDU and LDU2 through the encryption sync tracker, so that a single
+     * corrupt HDU or LDU2 that reports a clear transmission as encrypted doesn't mute the rest of it.  While one HDU
+     * or LDU2 disagrees with the established state, voice frames are held until the next LDU2 decides, so that no
+     * audio is lost when the state stands and no encrypted audio is played when it changes.  The state is reset by
+     * the terminator (TDU/TDULC) at the end of each transmission.
      */
     public void receive(IMessage message)
     {
         if(hasAudioCodec())
         {
-            if(mEncryptedCallStateEstablished)
+            if(message instanceof TDUMessage || message instanceof TDULCMessage)
             {
-                if(message instanceof LDUMessage ldu)
+                mEncryptionTracker.reset();
+                mCachedLDUMessages.clear();
+            }
+            else if(message instanceof HDUMessage hdu)
+            {
+                if(hdu.isValid())
                 {
-                    processAudio(ldu);
+                    mEncryptionTracker.process(hdu.getHeaderData().isEncryptedAudio());
                 }
             }
-            else
+            else if(message instanceof LDU1Message ldu1)
             {
-                if(message instanceof HDUMessage hdu && hdu.isValid())
+                if(isEncryptionStateDecided())
                 {
-                    mEncryptedCallStateEstablished = true;
-                    mEncryptedCall = hdu.getHeaderData().isEncryptedAudio();
+                    processAudio(ldu1);
                 }
-                else if(message instanceof LDU1Message ldu1)
+                else
                 {
                     //When we receive an LDU1 message without first receiving the HDU message, cache the LDU1 Message
                     //until we can determine the encrypted call state from the next LDU2 message
                     mCachedLDUMessages.add(ldu1);
                 }
-                else if(message instanceof LDU2Message ldu2)
+            }
+            else if(message instanceof LDU2Message ldu2)
+            {
+                if(ldu2.getEncryptionSyncParameters().isValid())
                 {
-                    if(ldu2.getEncryptionSyncParameters().isValid())
-                    {
-                        mEncryptedCallStateEstablished = true;
-                        mEncryptedCall = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
-                    }
+                    mEncryptionTracker.process(ldu2.getEncryptionSyncParameters().isEncryptedAudio());
+                }
 
-                    if(mEncryptedCallStateEstablished)
-                    {
-                        for(LDUMessage cachedLdu : mCachedLDUMessages)
-                        {
-                            processAudio(cachedLdu);
-                        }
-
-                        mCachedLDUMessages.clear();
-                        processAudio(ldu2);
-                    }
-                    else
-                    {
-                        mCachedLDUMessages.add(ldu2);
-                    }
+                if(isEncryptionStateDecided())
+                {
+                    processCachedAudio();
+                    processAudio(ldu2);
+                }
+                else
+                {
+                    mCachedLDUMessages.add(ldu2);
                 }
             }
         }
+    }
+
+    /**
+     * Indicates if the encryption state of the transmission is established and isn't waiting on the next HDU or LDU2
+     * to decide a change.
+     */
+    private boolean isEncryptionStateDecided()
+    {
+        return mEncryptionTracker.isEstablished() && !mEncryptionTracker.isChangePending();
+    }
+
+    /**
+     * Processes and clears the cached voice frames.
+     */
+    private void processCachedAudio()
+    {
+        for(LDUMessage cachedLdu : mCachedLDUMessages)
+        {
+            processAudio(cachedLdu);
+        }
+
+        mCachedLDUMessages.clear();
     }
 
     /**
@@ -132,7 +160,7 @@ public class P25P1AudioModule extends ImbeAudioModule
      */
     private void processAudio(LDUMessage ldu)
     {
-        if(!mEncryptedCall)
+        if(!mEncryptionTracker.isEncrypted())
         {
             for(byte[] frame : ldu.getIMBEFrames())
             {
@@ -158,8 +186,7 @@ public class P25P1AudioModule extends ImbeAudioModule
             if(event.getSquelchState() == SquelchState.SQUELCH)
             {
                 closeAudioSegment();
-                mEncryptedCallStateEstablished = false;
-                mEncryptedCall = false;
+                mEncryptionTracker.reset();
                 mCachedLDUMessages.clear();
             }
         }

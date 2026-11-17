@@ -198,7 +198,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
      * the LDU1 voice channel user link control while transmitting clear voice (HDU and LDU2 report ALGID 0x80), so the
      * algorithm ID takes precedence over the link control service options when it is known.
      */
-    private Boolean mCallEncryptedByAlgorithm = null;
+    private final P25P1EncryptionSyncTracker mEncryptionTracker = new P25P1EncryptionSyncTracker();
 
     /**
      * Constructs an APCO-25 decoder state with an optional traffic channel manager.
@@ -429,7 +429,8 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
             serviceOptions = sop.getServiceOptions();
 
             //Trust the HDU/LDU2 algorithm ID over the link control service options encryption flag when known.
-            if(serviceOptions != null && serviceOptions.isEncrypted() && Boolean.FALSE.equals(mCallEncryptedByAlgorithm))
+            if(serviceOptions != null && serviceOptions.isEncrypted() && mEncryptionTracker.isEstablished() &&
+                    !mEncryptionTracker.isEncrypted())
             {
                 serviceOptions = VoiceServiceOptions.createUnencrypted(serviceOptions);
             }
@@ -452,7 +453,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
         //change back to CALL, so entering it on the link control flag alone (ie late entry without the HDU) leaves a
         //clear call that some radios mis-flag stuck in ENCRYPTED.  The audio module holds audio until the HDU/LDU2
         //establishes the encryption state, so the CALL state here never releases encrypted audio.
-        if(serviceOptions.isEncrypted() && mCallEncryptedByAlgorithm != null)
+        if(serviceOptions.isEncrypted() && mEncryptionTracker.isEstablished())
         {
             broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.ENCRYPTED));
         }
@@ -854,9 +855,18 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                     talkgroup = mPatchGroupManager.update(talkgroup, message.getTimestamp());
                 }
 
+                //A single HDU that disagrees with the established encryption state of the transmission is ignored.
+                //A corrupt HDU can pass error correction and report a clear transmission as encrypted, and the
+                //ENCRYPTED state can't change back to CALL.
+                if(mEncryptionTracker.process(headerData.isEncryptedAudio()) != headerData.isEncryptedAudio())
+                {
+                    logIgnoredEncryptionSync(hdu);
+                    broadcastCurrentCallState();
+                    return;
+                }
+
                 Identifier<?> radio = getIdentifierCollection().getFromIdentifier();
 
-                mCallEncryptedByAlgorithm = headerData.isEncryptedAudio();
                 mTrafficChannelManager.processP1TrafficCallStart(getCurrentFrequency(), talkgroup, radio,
                         headerData.getEncryptionKey(), mCurrentServiceOptions, getCurrentChannel(), message.getTimestamp());
 
@@ -898,8 +908,16 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
             if(esp != null && esp.isValid())
             {
+                //A single LDU2 encryption sync that disagrees with the established encryption state of the
+                //transmission is ignored.  See processHDU().
+                if(mEncryptionTracker.process(esp.isEncryptedAudio()) != esp.isEncryptedAudio())
+                {
+                    logIgnoredEncryptionSync(ldu2);
+                    broadcastCurrentCallState();
+                    return;
+                }
+
                 getIdentifierCollection().update(esp.getIdentifiers());
-                mCallEncryptedByAlgorithm = esp.isEncryptedAudio();
 
                 if(esp.isEncryptedAudio())
                 {
@@ -919,11 +937,29 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     }
 
     /**
+     * Broadcasts a continuation of the current call in the state that the encryption sync tracker has established.
+     */
+    private void broadcastCurrentCallState()
+    {
+        broadcast(new DecoderStateEvent(this, Event.CONTINUATION,
+                mEncryptionTracker.isEncrypted() ? State.ENCRYPTED : State.CALL));
+    }
+
+    /**
+     * Logs an HDU or LDU2 whose encryption state was ignored because it disagrees with the established state.
+     */
+    private void logIgnoredEncryptionSync(P25P1Message message)
+    {
+        LOGGER.info("P25P1 [{}] ignored encryption sync that disagrees with the {} transmission: {}",
+                getCurrentFrequency(), mEncryptionTracker.isEncrypted() ? "encrypted" : "clear", message);
+    }
+
+    /**
      * Process Terminator Data Unit (TDU).
      */
     private void processTDU(P25P1Message message)
     {
-        mCallEncryptedByAlgorithm = null;
+        mEncryptionTracker.reset();
         mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDU:" + message);
         broadcast(new DecoderStateEvent(this, Event.DECODE, State.ACTIVE));
     }
@@ -942,7 +978,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
             if(lcw != null && lcw.isValid())
             {
-                mCallEncryptedByAlgorithm = null;
+                mEncryptionTracker.reset();
                 mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDULC:" + message);
                 broadcast(new DecoderStateEvent(this, Event.DECODE, State.ACTIVE));
                 processLC(lcw, message.getTimestamp(), true);
