@@ -39,6 +39,7 @@ import io.github.dsheirer.module.decode.p25.phase1.message.lc.LinkControlWord;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.EncryptionSyncParameters;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU1Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU2Message;
+import io.github.dsheirer.module.decode.p25.phase1.message.tdu.TDULCMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.tdu.TDUMessage;
 import io.github.dsheirer.preference.UserPreferences;
 import java.lang.reflect.Proxy;
@@ -227,6 +228,21 @@ class P25P1CorruptEncryptionSyncAudioTest
             };
         }
 
+        /**
+         * A TDULC whose link control word failed error correction.  The decoder state ignores it.
+         */
+        TDULCMessage invalidTdulc()
+        {
+            return new TDULCMessage(zero(P25P1DataUnitID.TERMINATOR_DATA_UNIT_LINK_CONTROL), NAC, timestamp())
+            {
+                @Override
+                public LinkControlWord getLinkControlWord()
+                {
+                    return null;
+                }
+            };
+        }
+
         TDUMessage tdu()
         {
             return new TDUMessage(new CorrectedBinaryMessage(64), NAC, timestamp());
@@ -357,6 +373,18 @@ class P25P1CorruptEncryptionSyncAudioTest
 
         rig.send(rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.tdu());
         assertEquals(5, rig.ldusPlayed());
+    }
+
+    @Test
+    void heldFramesAreNotPlayedWhenChannelSquelchesForEncryptedState()
+    {
+        //One encrypted HDU, then the audio module is reset by a TDULC that the decoder state ignores, then a
+        //zero-filled LDU2.  The channel squelches when the decoder state confirms the transmission as encrypted, which
+        //is not a terminator, so the held frames must not be played.
+        Rig rig = new Rig();
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.invalidTdulc(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(),
+            rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
     }
 
     @Test

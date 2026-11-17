@@ -42,6 +42,7 @@ public class P25P1AudioModule extends ImbeAudioModule
 
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private List<LDUMessage> mCachedLDUMessages = new ArrayList<>();
+    private List<LDUMessage> mEmptySyncOnlyLDUMessages = new ArrayList<>();
 
     public P25P1AudioModule(UserPreferences userPreferences, AliasList aliasList)
     {
@@ -88,6 +89,8 @@ public class P25P1AudioModule extends ImbeAudioModule
     {
         if(hasAudioCodec())
         {
+            processEmptySyncOnlyAudio(message);
+
             if(message instanceof TDUMessage || message instanceof TDULCMessage)
             {
                 mEncryptionTracker.reset();
@@ -146,6 +149,35 @@ public class P25P1AudioModule extends ImbeAudioModule
     }
 
     /**
+     * Plays or discards the voice frames that were set aside when the channel squelched while the only encryption sync
+     * of the transmission was a single empty (all-zero) one.  They are played as unencrypted only when the squelch was
+     * from the terminator of the transmission, ie the message that follows the squelch is the TDU/TDULC.  Systems that
+     * send an all-zero encryption sync with unencrypted audio would otherwise lose a late-entry transmission that ends
+     * before its second LDU2.  They are discarded for any other cause of the squelch, such as the channel changing to
+     * the ENCRYPTED state.
+     */
+    private void processEmptySyncOnlyAudio(IMessage message)
+    {
+        if(!mEmptySyncOnlyLDUMessages.isEmpty())
+        {
+            if(message instanceof TDUMessage || message instanceof TDULCMessage)
+            {
+                for(LDUMessage ldu : mEmptySyncOnlyLDUMessages)
+                {
+                    for(byte[] frame : ldu.getIMBEFrames())
+                    {
+                        addAudio(getAudioCodec().getAudio(frame));
+                    }
+                }
+
+                closeAudioSegment();
+            }
+
+            mEmptySyncOnlyLDUMessages.clear();
+        }
+    }
+
+    /**
      * Processes and clears the cached voice frames.
      */
     private void processCachedAudio()
@@ -188,12 +220,13 @@ public class P25P1AudioModule extends ImbeAudioModule
         {
             if(event.getSquelchState() == SquelchState.SQUELCH)
             {
-                //A transmission that ended with a single empty (all-zero) encryption sync as its only one is played
-                //as unencrypted, as it was before the encryption sync tracker.  Systems that send an all-zero
-                //encryption sync with unencrypted audio would otherwise lose short late-entry transmissions.
+                //Set aside the voice frames of a transmission whose only encryption sync is a single empty (all-zero)
+                //one.  They are played if this squelch is from the terminator - see processEmptySyncOnlyAudio()
+                mEmptySyncOnlyLDUMessages.clear();
+
                 if(mEncryptionTracker.isEmptySyncOnly())
                 {
-                    processCachedAudio();
+                    mEmptySyncOnlyLDUMessages.addAll(mCachedLDUMessages);
                 }
 
                 closeAudioSegment();
