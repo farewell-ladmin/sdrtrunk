@@ -347,6 +347,30 @@ class P25P1CorruptEncryptionSyncAudioTest
     }
 
     @Test
+    void lateEntryTransmissionWithSingleEmptySyncPlays()
+    {
+        //A system that sends an all-zero encryption sync with unencrypted audio: a late-entry transmission that ends
+        //after one LDU2 is played when the channel squelches at the terminator.
+        Rig rig = new Rig();
+        rig.send(rig.ldu1(), rig.zeroLdu2(), rig.tdu());
+        assertEquals(2, rig.ldusPlayed());
+
+        rig.send(rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.tdu());
+        assertEquals(5, rig.ldusPlayed());
+    }
+
+    @Test
+    void lateEntryWithSingleEmptySyncIsNotPlayedWhileChannelIsEncrypted()
+    {
+        //After an encrypted transmission the channel stays in the ENCRYPTED state.  A late-entry transmission whose
+        //only encryption sync is a zero-filled LDU2 is not played, as it wasn't before.
+        Rig rig = new Rig();
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        rig.send(rig.ldu1(), rig.zeroLdu2(), rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
+    }
+
+    @Test
     void clearTransmissionWithZeroFilledLdu2sPlays()
     {
         Rig rig = new Rig();

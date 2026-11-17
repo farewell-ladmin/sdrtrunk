@@ -188,6 +188,14 @@ public class P25P1AudioModule extends ImbeAudioModule
         {
             if(event.getSquelchState() == SquelchState.SQUELCH)
             {
+                //A transmission that ended with a single empty (all-zero) encryption sync as its only one is played
+                //as unencrypted, as it was before the encryption sync tracker.  Systems that send an all-zero
+                //encryption sync with unencrypted audio would otherwise lose short late-entry transmissions.
+                if(mEncryptionTracker.isEmptySyncOnly())
+                {
+                    processCachedAudio();
+                }
+
                 closeAudioSegment();
                 mEncryptionTracker.reset();
                 mCachedLDUMessages.clear();

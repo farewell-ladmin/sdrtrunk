@@ -76,10 +76,13 @@ class P25P1EncryptionSyncTrackerTest
     void singleEmptySyncDoesNotEstablishClear()
     {
         P25P1EncryptionSyncTracker tracker = new P25P1EncryptionSyncTracker();
+        assertFalse(tracker.isEmptySyncOnly());
         assertFalse(tracker.process(false, true));
         assertFalse(tracker.isEstablished(), "one empty encryption sync doesn't establish the state");
+        assertTrue(tracker.isEmptySyncOnly());
         assertTrue(tracker.process(true, false), "the encrypted sync that follows establishes it");
         assertTrue(tracker.isEncrypted());
+        assertFalse(tracker.isEmptySyncOnly());
 
         //Two consecutive empty syncs establish clear
         tracker.reset();

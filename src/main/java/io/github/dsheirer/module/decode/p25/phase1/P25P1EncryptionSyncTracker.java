@@ -133,6 +133,16 @@ public class P25P1EncryptionSyncTracker
     }
 
     /**
+     * Indicates if the only encryption sync received for the current transmission is a single empty (all-zero) one,
+     * which hasn't established the state.  Systems that send an all-zero encryption sync with unencrypted audio
+     * produce this for a transmission that ends before a second LDU2.
+     */
+    public boolean isEmptySyncOnly()
+    {
+        return !mEstablished && mConsecutiveEmptyCount > 0;
+    }
+
+    /**
      * Indicates if the current transmission is encrypted.  Only meaningful when the state is established.
      */
     public boolean isEncrypted()
