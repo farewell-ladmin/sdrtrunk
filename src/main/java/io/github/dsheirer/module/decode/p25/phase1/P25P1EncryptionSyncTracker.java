@@ -35,6 +35,25 @@ public class P25P1EncryptionSyncTracker
     private boolean mEstablished;
     private boolean mEncrypted;
     private boolean mChangePending;
+    private boolean mConfirmed;
+
+    /**
+     * Processes the encrypted state from a valid LDU2 encryption sync.  An empty (all-zero) encryption sync is treated
+     * as unencrypted, but a zero-filled LDU2 that was substituted for a lost one also contains it, so it is ignored
+     * when the transmission is encrypted and can't change the state to unencrypted.
+     * @param encrypted true if the LDU2 indicates encrypted audio
+     * @param empty true if the encryption sync is all zeros
+     * @return true if the transmission is encrypted, after processing the arguments.
+     */
+    public boolean process(boolean encrypted, boolean empty)
+    {
+        if(empty && mEstablished && mEncrypted)
+        {
+            return true;
+        }
+
+        return process(encrypted);
+    }
 
     /**
      * Processes the encrypted state from a valid HDU or LDU2 encryption sync.
@@ -48,16 +67,19 @@ public class P25P1EncryptionSyncTracker
             mEstablished = true;
             mEncrypted = encrypted;
             mChangePending = false;
+            mConfirmed = false;
         }
         else if(encrypted == mEncrypted)
         {
             mChangePending = false;
+            mConfirmed = true;
         }
         else if(mChangePending)
         {
             //Second consecutive HDU or LDU2 that disagrees - change the state
             mEncrypted = encrypted;
             mChangePending = false;
+            mConfirmed = true;
         }
         else
         {
@@ -93,10 +115,20 @@ public class P25P1EncryptionSyncTracker
     }
 
     /**
+     * Indicates if the current transmission is encrypted and a second HDU or LDU2 has agreed with the one that
+     * established it.  The channel state uses this, because the ENCRYPTED channel state can't change back to CALL.
+     */
+    public boolean isConfirmedEncrypted()
+    {
+        return mEstablished && mEncrypted && mConfirmed;
+    }
+
+    /**
      * Resets the tracker at the end of a transmission.
      */
     public void reset()
     {
+        mConfirmed = false;
         mEstablished = false;
         mEncrypted = false;
         mChangePending = false;

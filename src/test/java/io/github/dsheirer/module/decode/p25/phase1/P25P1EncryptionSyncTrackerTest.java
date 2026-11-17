@@ -61,6 +61,45 @@ class P25P1EncryptionSyncTrackerTest
     }
 
     @Test
+    void emptySyncDoesNotChangeAnEncryptedState()
+    {
+        P25P1EncryptionSyncTracker tracker = new P25P1EncryptionSyncTracker();
+        tracker.process(true, false);
+        assertTrue(tracker.process(false, true));
+        assertTrue(tracker.process(false, true));
+        assertTrue(tracker.process(false, true), "any number of empty encryption syncs are ignored");
+        assertFalse(tracker.isChangePending());
+
+        //An empty sync establishes and agrees with a clear state
+        tracker.reset();
+        assertFalse(tracker.process(false, true));
+        assertTrue(tracker.isEstablished());
+        assertFalse(tracker.process(true, false));
+        assertFalse(tracker.process(false, true));
+        assertFalse(tracker.isChangePending());
+    }
+
+    @Test
+    void encryptedIsConfirmedBySecondAgreement()
+    {
+        P25P1EncryptionSyncTracker tracker = new P25P1EncryptionSyncTracker();
+        tracker.process(true);
+        assertTrue(tracker.isEncrypted());
+        assertFalse(tracker.isConfirmedEncrypted(), "one encrypted value is not confirmed");
+        tracker.process(true);
+        assertTrue(tracker.isConfirmedEncrypted());
+
+        tracker.reset();
+        tracker.process(false);
+        tracker.process(true);
+        assertFalse(tracker.isConfirmedEncrypted());
+        tracker.process(true);
+        assertTrue(tracker.isConfirmedEncrypted(), "a change to encrypted by two values is confirmed");
+        tracker.reset();
+        assertFalse(tracker.isConfirmedEncrypted());
+    }
+
+    @Test
     void twoConsecutiveDisagreementsChangeTheState()
     {
         P25P1EncryptionSyncTracker tracker = new P25P1EncryptionSyncTracker();

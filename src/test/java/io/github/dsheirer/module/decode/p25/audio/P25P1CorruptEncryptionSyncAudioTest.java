@@ -185,9 +185,27 @@ class P25P1CorruptEncryptionSyncAudioTest
         }
 
         /**
-         * An all-zero LDU2, which sdrtrunk treats as unencrypted.
+         * An LDU2 with valid encryption sync parameters for algorithm 0x80 (unencrypted).
          */
         LDU2Message clearLdu2()
+        {
+            return new LDU2Message(zero(P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_2), NAC, timestamp())
+            {
+                private final EncryptionSyncParameters mParameters = new EncryptionSyncParameters(bits(96, 72));
+
+                @Override
+                public EncryptionSyncParameters getEncryptionSyncParameters()
+                {
+                    return mParameters;
+                }
+            };
+        }
+
+        /**
+         * An all-zero LDU2, which is what is substituted for a lost LDU2.  sdrtrunk treats its all-zero encryption
+         * sync as unencrypted.
+         */
+        LDU2Message zeroLdu2()
         {
             return new LDU2Message(zero(P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_2), NAC, timestamp());
         }
@@ -244,6 +262,11 @@ class P25P1CorruptEncryptionSyncAudioTest
         assertFalse(rig.clearHdu().getHeaderData().isEncryptedAudio());
         assertTrue(rig.clearLdu2().getEncryptionSyncParameters().isValid());
         assertFalse(rig.clearLdu2().getEncryptionSyncParameters().isEncryptedAudio());
+        assertFalse(rig.clearLdu2().getEncryptionSyncParameters().isEmpty());
+        assertTrue(rig.zeroLdu2().getEncryptionSyncParameters().isValid());
+        assertFalse(rig.zeroLdu2().getEncryptionSyncParameters().isEncryptedAudio(), "all-zero LDU2 reads as clear");
+        assertTrue(rig.zeroLdu2().getEncryptionSyncParameters().isEmpty());
+        assertFalse(rig.encryptedLdu2().getEncryptionSyncParameters().isEmpty());
         assertTrue(rig.encryptedLdu2().getEncryptionSyncParameters().isValid());
         assertTrue(rig.encryptedLdu2().getEncryptionSyncParameters().isEncryptedAudio());
     }
@@ -283,6 +306,56 @@ class P25P1CorruptEncryptionSyncAudioTest
         rig.send(rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.clearLdu2(),
             rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
         assertEquals(0, rig.ldusPlayed());
+    }
+
+    @Test
+    void encryptedTransmissionIsNotPlayedAfterZeroFilledLdu2s()
+    {
+        //Zero-filled LDU2s are substituted for lost ones and read as clear.  Any number of them in a row must not
+        //change an encrypted transmission to clear.
+        Rig rig = new Rig();
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(),
+            rig.zeroLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
+    }
+
+    @Test
+    void clearTransmissionWithZeroFilledLdu2sPlays()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.clearHdu(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.clearLdu2(), rig.tdu());
+        assertEquals(4, rig.ldusPlayed());
+
+        //Late entry where every LDU2 has an all-zero encryption sync
+        rig.send(rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.tdu());
+        assertEquals(8, rig.ldusPlayed());
+    }
+
+    @Test
+    void heldEncryptedFramesAreNotPlayedWhenClearHduFollows()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.clearHdu(), rig.ldu1(), rig.clearLdu2());
+        assertEquals(2, rig.ldusPlayed());
+
+        //The terminator is missed, a short encrypted transmission follows whose terminator is also missed, and then
+        //a clear transmission starts.  The frames held from the encrypted transmission must not be played.
+        rig.send(rig.ldu1(), rig.encryptedLdu2(), rig.ldu1());
+        rig.send(rig.clearHdu(), rig.ldu1(), rig.clearLdu2(), rig.ldu1(), rig.clearLdu2(), rig.tdu());
+        assertEquals(2 + 1 + 4, rig.ldusPlayed(), "the LDU1 before the encrypted LDU2 and the next clear " +
+            "transmission are played, and the held encrypted frames are not");
+    }
+
+    @Test
+    void clearTransmissionAfterMissedTerminatorOfEncryptedTransmissionPlays()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2());
+        assertEquals(0, rig.ldusPlayed());
+
+        rig.send(rig.clearHdu(), rig.ldu1(), rig.clearLdu2(), rig.ldu1(), rig.clearLdu2(), rig.tdu());
+        assertTrue(rig.ldusPlayed() >= 3, "the clear transmission plays once its HDU and first LDU2 agree, played: " +
+            rig.ldusPlayed());
     }
 
     @Test
