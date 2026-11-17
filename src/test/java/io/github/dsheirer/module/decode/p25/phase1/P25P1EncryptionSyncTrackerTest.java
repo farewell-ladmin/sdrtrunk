@@ -70,13 +70,48 @@ class P25P1EncryptionSyncTrackerTest
         assertTrue(tracker.process(false, true), "any number of empty encryption syncs are ignored");
         assertFalse(tracker.isChangePending());
 
-        //An empty sync establishes and agrees with a clear state
+    }
+
+    @Test
+    void singleEmptySyncDoesNotEstablishClear()
+    {
+        P25P1EncryptionSyncTracker tracker = new P25P1EncryptionSyncTracker();
+        assertFalse(tracker.process(false, true));
+        assertFalse(tracker.isEstablished(), "one empty encryption sync doesn't establish the state");
+        assertTrue(tracker.process(true, false), "the encrypted sync that follows establishes it");
+        assertTrue(tracker.isEncrypted());
+
+        //Two consecutive empty syncs establish clear
         tracker.reset();
+        tracker.process(false, true);
         assertFalse(tracker.process(false, true));
         assertTrue(tracker.isEstablished());
-        assertFalse(tracker.process(true, false));
+        assertFalse(tracker.isEncrypted());
+
+        //An empty sync agrees with an established clear state
         assertFalse(tracker.process(false, true));
         assertFalse(tracker.isChangePending());
+    }
+
+    @Test
+    void singleEmptySyncDoesNotSettlePendingChange()
+    {
+        P25P1EncryptionSyncTracker tracker = new P25P1EncryptionSyncTracker();
+        tracker.process(false);
+        tracker.process(true, false);
+        assertTrue(tracker.isChangePending());
+        assertFalse(tracker.process(false, true));
+        assertTrue(tracker.isChangePending(), "one empty sync leaves the change pending");
+        assertTrue(tracker.process(true, false), "the second encrypted sync changes the state");
+
+        //Two consecutive empty syncs settle the pending change as clear
+        tracker.reset();
+        tracker.process(false);
+        tracker.process(true, false);
+        tracker.process(false, true);
+        assertFalse(tracker.process(false, true));
+        assertFalse(tracker.isChangePending());
+        assertFalse(tracker.isEncrypted());
     }
 
     @Test

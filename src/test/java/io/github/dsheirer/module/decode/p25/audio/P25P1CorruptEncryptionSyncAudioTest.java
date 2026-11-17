@@ -320,6 +320,33 @@ class P25P1CorruptEncryptionSyncAudioTest
     }
 
     @Test
+    void lateEntryEncryptedTransmissionIsNotPlayedWhenFirstLdu2IsZeroFilled()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(),
+            rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
+
+        //The same after an encrypted transmission on the channel
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        rig.send(rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(),
+            rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
+    }
+
+    @Test
+    void encryptedTransmissionAfterMissedTerminatorIsNotPlayedWhenFirstLdu2IsZeroFilled()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.clearHdu(), rig.ldu1(), rig.clearLdu2());
+        assertEquals(2, rig.ldusPlayed());
+
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(),
+            rig.encryptedLdu2(), rig.tdu());
+        assertEquals(2, rig.ldusPlayed(), "no LDU of the encrypted transmission is played");
+    }
+
+    @Test
     void clearTransmissionWithZeroFilledLdu2sPlays()
     {
         Rig rig = new Rig();

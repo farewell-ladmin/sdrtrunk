@@ -36,23 +36,47 @@ public class P25P1EncryptionSyncTracker
     private boolean mEncrypted;
     private boolean mChangePending;
     private boolean mConfirmed;
+    private int mConsecutiveEmptyCount;
 
     /**
-     * Processes the encrypted state from a valid LDU2 encryption sync.  An empty (all-zero) encryption sync is treated
-     * as unencrypted, but a zero-filled LDU2 that was substituted for a lost one also contains it, so it is ignored
-     * when the transmission is encrypted and can't change the state to unencrypted.
+     * Processes the encrypted state from a valid LDU2 encryption sync.
+     *
+     * An empty (all-zero) encryption sync is treated as unencrypted, but a zero-filled LDU2 that was substituted for a
+     * lost one also contains it, so it is weak evidence:
+     * - it is ignored when the transmission is encrypted and can't change the state to unencrypted,
+     * - it agrees with a transmission that is established as unencrypted, and
+     * - a single one doesn't establish an unencrypted state or settle a pending change.  Two consecutive ones do, for
+     *   systems that send an all-zero encryption sync with unencrypted audio.
+     *
      * @param encrypted true if the LDU2 indicates encrypted audio
      * @param empty true if the encryption sync is all zeros
      * @return true if the transmission is encrypted, after processing the arguments.
      */
     public boolean process(boolean encrypted, boolean empty)
     {
-        if(empty && mEstablished && mEncrypted)
+        if(!empty)
+        {
+            return process(encrypted);
+        }
+
+        if(mEstablished && mEncrypted)
         {
             return true;
         }
 
-        return process(encrypted);
+        if(mEstablished && !mChangePending)
+        {
+            return false;
+        }
+
+        mConsecutiveEmptyCount++;
+
+        if(mConsecutiveEmptyCount >= 2)
+        {
+            return process(false);
+        }
+
+        return false;
     }
 
     /**
@@ -62,6 +86,8 @@ public class P25P1EncryptionSyncTracker
      */
     public boolean process(boolean encrypted)
     {
+        mConsecutiveEmptyCount = 0;
+
         if(!mEstablished)
         {
             mEstablished = true;
@@ -129,6 +155,7 @@ public class P25P1EncryptionSyncTracker
     public void reset()
     {
         mConfirmed = false;
+        mConsecutiveEmptyCount = 0;
         mEstablished = false;
         mEncrypted = false;
         mChangePending = false;
