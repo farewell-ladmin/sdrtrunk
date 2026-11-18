@@ -46,6 +46,8 @@ public class HeaderData
     private static final int[] KEY_ID = {88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103};
     private static final int[] TALKGROUP_ID = {104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119};
 
+    private static final int HEADER_DATA_LENGTH = 120;
+
     private boolean mValid = true;
     private BinaryMessage mMessage;
     private EncryptionKeyIdentifier mEncryptionKey;
@@ -147,6 +149,17 @@ public class HeaderData
     public boolean isEncryptedAudio()
     {
         return getEncryption() != Encryption.UNENCRYPTED;
+    }
+
+    /**
+     * Indicates if the message indicator, vendor, algorithm, key and talkgroup are all zeros.  The all-zero header is
+     * a valid codeword that passes error correction and decodes as algorithm 0x00, but it carries no information
+     * about the transmission and it isn't evidence that the audio is encrypted.
+     */
+    public boolean isEmpty()
+    {
+        int firstSetBit = getMessage().nextSetBit(0);
+        return firstSetBit < 0 || firstSetBit >= HEADER_DATA_LENGTH;
     }
 
     public TalkgroupIdentifier getTalkgroup()

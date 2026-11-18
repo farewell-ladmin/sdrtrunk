@@ -102,7 +102,16 @@ public class P25P1AudioModule extends ImbeAudioModule
                 {
                     //The HDU starts a new transmission.  Voice frames that are still held belong to the previous one.
                     mCachedLDUMessages.clear();
-                    mEncryptionTracker.process(hdu.getHeaderData().isEncryptedAudio());
+
+                    if(hdu.getHeaderData().isEmpty())
+                    {
+                        //The all-zero HDU carries no information and isn't evidence of encryption.
+                        mEncryptionTracker.processEmptyHeader();
+                    }
+                    else
+                    {
+                        mEncryptionTracker.process(hdu.getHeaderData().isEncryptedAudio());
+                    }
                 }
             }
             else if(message instanceof LDU1Message ldu1)

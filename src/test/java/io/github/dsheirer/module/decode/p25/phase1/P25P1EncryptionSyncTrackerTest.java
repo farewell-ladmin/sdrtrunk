@@ -118,6 +118,45 @@ class P25P1EncryptionSyncTrackerTest
     }
 
     @Test
+    void emptyHeaderIsNotEvidenceOfEncryption()
+    {
+        P25P1EncryptionSyncTracker tracker = new P25P1EncryptionSyncTracker();
+        tracker.processEmptyHeader();
+        assertFalse(tracker.isEstablished(), "an empty header doesn't establish the state");
+        assertFalse(tracker.isEncrypted());
+        assertFalse(tracker.process(false), "the clear sync that follows establishes it");
+        assertTrue(tracker.isEstablished());
+        assertFalse(tracker.isChangePending());
+
+        //It doesn't confirm or change an encrypted state
+        tracker.reset();
+        tracker.process(true);
+        tracker.processEmptyHeader();
+        assertTrue(tracker.isEncrypted());
+        assertFalse(tracker.isConfirmedEncrypted());
+        assertFalse(tracker.isChangePending());
+
+        //It holds an established clear state as pending until the next sync decides, and can't change it
+        tracker.reset();
+        tracker.process(false);
+        tracker.processEmptyHeader();
+        tracker.processEmptyHeader();
+        assertTrue(tracker.isChangePending());
+        assertFalse(tracker.isEncrypted());
+        assertFalse(tracker.process(false));
+        assertFalse(tracker.isChangePending());
+
+        //A transmission with an empty header isn't an empty-sync-only transmission
+        tracker.reset();
+        tracker.processEmptyHeader();
+        tracker.process(false, true);
+        assertFalse(tracker.isEmptySyncOnly());
+        tracker.reset();
+        tracker.process(false, true);
+        assertTrue(tracker.isEmptySyncOnly());
+    }
+
+    @Test
     void encryptedIsConfirmedBySecondAgreement()
     {
         P25P1EncryptionSyncTracker tracker = new P25P1EncryptionSyncTracker();

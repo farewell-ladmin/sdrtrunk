@@ -166,7 +166,25 @@ class P25P1CorruptEncryptionSyncAudioTest
         }
 
         /**
-         * An all-zero HDU: a valid codeword that decodes as algorithm 0x00, which is treated as encrypted.
+         * An HDU for algorithm 0x84 (AES-256), key 1 and talkgroup 1.
+         */
+        HDUMessage encryptedHdu()
+        {
+            return new HDUMessage(zero(P25P1DataUnitID.HEADER_DATA_UNIT), NAC, timestamp())
+            {
+                private final HeaderData mHeaderData = new HeaderData(bits(120, 80, 85, 103, 119));
+
+                @Override
+                public HeaderData getHeaderData()
+                {
+                    return mHeaderData;
+                }
+            };
+        }
+
+        /**
+         * An all-zero HDU: a valid codeword that decodes as algorithm 0x00.  It carries no information and isn't
+         * evidence that the transmission is encrypted.
          */
         HDUMessage zeroHdu()
         {
@@ -274,6 +292,11 @@ class P25P1CorruptEncryptionSyncAudioTest
         Rig rig = new Rig();
         assertTrue(rig.zeroHdu().isValid(), "all-zero HDU passes error correction");
         assertTrue(rig.zeroHdu().getHeaderData().isEncryptedAudio(), "all-zero HDU reads as encrypted");
+        assertTrue(rig.zeroHdu().getHeaderData().isEmpty());
+        assertFalse(rig.clearHdu().getHeaderData().isEmpty());
+        assertTrue(rig.encryptedHdu().isValid());
+        assertTrue(rig.encryptedHdu().getHeaderData().isEncryptedAudio());
+        assertFalse(rig.encryptedHdu().getHeaderData().isEmpty());
         assertTrue(rig.clearHdu().isValid());
         assertFalse(rig.clearHdu().getHeaderData().isEncryptedAudio());
         assertTrue(rig.clearLdu2().getEncryptionSyncParameters().isValid());
@@ -307,7 +330,7 @@ class P25P1CorruptEncryptionSyncAudioTest
     void encryptedTransmissionIsNotPlayed()
     {
         Rig rig = new Rig();
-        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        rig.send(rig.encryptedHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
         assertEquals(0, rig.ldusPlayed());
 
         //Late entry
@@ -330,7 +353,7 @@ class P25P1CorruptEncryptionSyncAudioTest
         //Zero-filled LDU2s are substituted for lost ones and read as clear.  Any number of them in a row must not
         //change an encrypted transmission to clear.
         Rig rig = new Rig();
-        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(),
+        rig.send(rig.encryptedHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(),
             rig.zeroLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
         assertEquals(0, rig.ldusPlayed());
     }
@@ -344,7 +367,7 @@ class P25P1CorruptEncryptionSyncAudioTest
         assertEquals(0, rig.ldusPlayed());
 
         //The same after an encrypted transmission on the channel
-        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        rig.send(rig.encryptedHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
         rig.send(rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(),
             rig.tdu());
         assertEquals(0, rig.ldusPlayed());
@@ -357,7 +380,7 @@ class P25P1CorruptEncryptionSyncAudioTest
         rig.send(rig.clearHdu(), rig.ldu1(), rig.clearLdu2());
         assertEquals(2, rig.ldusPlayed());
 
-        rig.send(rig.zeroHdu(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(),
+        rig.send(rig.encryptedHdu(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(),
             rig.encryptedLdu2(), rig.tdu());
         assertEquals(2, rig.ldusPlayed(), "no LDU of the encrypted transmission is played");
     }
@@ -382,7 +405,7 @@ class P25P1CorruptEncryptionSyncAudioTest
         //zero-filled LDU2.  The channel squelches when the decoder state confirms the transmission as encrypted, which
         //is not a terminator, so the held frames must not be played.
         Rig rig = new Rig();
-        rig.send(rig.zeroHdu(), rig.ldu1(), rig.invalidTdulc(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(),
+        rig.send(rig.encryptedHdu(), rig.ldu1(), rig.invalidTdulc(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(),
             rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
         assertEquals(0, rig.ldusPlayed());
     }
@@ -393,7 +416,7 @@ class P25P1CorruptEncryptionSyncAudioTest
         //After an encrypted transmission the channel stays in the ENCRYPTED state.  A late-entry transmission whose
         //only encryption sync is a zero-filled LDU2 is not played, as it wasn't before.
         Rig rig = new Rig();
-        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        rig.send(rig.encryptedHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
         rig.send(rig.ldu1(), rig.zeroLdu2(), rig.tdu());
         assertEquals(0, rig.ldusPlayed());
     }
@@ -429,7 +452,7 @@ class P25P1CorruptEncryptionSyncAudioTest
     void clearTransmissionAfterMissedTerminatorOfEncryptedTransmissionPlays()
     {
         Rig rig = new Rig();
-        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2());
+        rig.send(rig.encryptedHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2());
         assertEquals(0, rig.ldusPlayed());
 
         rig.send(rig.clearHdu(), rig.ldu1(), rig.clearLdu2(), rig.ldu1(), rig.clearLdu2(), rig.tdu());
@@ -468,13 +491,55 @@ class P25P1CorruptEncryptionSyncAudioTest
     }
 
     @Test
-    void corruptFirstHduMutesOnlyUntilTwoClearLdu2sAgree()
+    void allZeroFirstHduDoesNotMuteClearTransmission()
     {
         Rig rig = new Rig();
         rig.send(rig.zeroHdu(), rig.ldu1(), rig.clearLdu2(), rig.ldu1(), rig.clearLdu2(), rig.ldu1(), rig.clearLdu2(),
             rig.tdu());
-        assertTrue(rig.ldusPlayed() >= 3, "the transmission plays once two clear LDU2s agree, played: " +
-            rig.ldusPlayed());
+        assertEquals(6, rig.ldusPlayed(), "every LDU of the clear transmission is played");
+    }
+
+    @Test
+    void encryptedTransmissionThatStartsWithAllZeroHduIsNotPlayed()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
+
+        //The same when one of its LDU2s was lost and zero-filled
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
+    }
+
+    @Test
+    void allZeroHduDoesNotChangeAnEncryptedTransmission()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.encryptedHdu(), rig.ldu1(), rig.zeroHdu(), rig.ldu1(), rig.clearLdu2(), rig.ldu1(),
+            rig.encryptedLdu2(), rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
+    }
+
+    @Test
+    void encryptedTransmissionWithAllZeroHduAfterMissedTerminatorIsNotPlayed()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.clearHdu(), rig.ldu1(), rig.clearLdu2());
+        assertEquals(2, rig.ldusPlayed());
+
+        //The terminator of the clear transmission is missed.  The all-zero HDU holds the voice frames until the
+        //next LDU2 decides.
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        assertEquals(2, rig.ldusPlayed(), "no LDU of the encrypted transmission is played");
+    }
+
+    @Test
+    void allZeroHduWithSingleEmptySyncIsNotPlayedAtTheTerminator()
+    {
+        //An all-zero HDU and a zero-filled LDU2 are no evidence of a clear transmission.
+        Rig rig = new Rig();
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.zeroLdu2(), rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
     }
 
     @Test
@@ -485,7 +550,7 @@ class P25P1CorruptEncryptionSyncAudioTest
         assertEquals(2, rig.ldusPlayed());
 
         //The terminator of the clear transmission is missed and an encrypted transmission follows.
-        rig.send(rig.zeroHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        rig.send(rig.encryptedHdu(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
         assertEquals(2, rig.ldusPlayed(), "no LDU of the encrypted transmission is played");
     }
 }

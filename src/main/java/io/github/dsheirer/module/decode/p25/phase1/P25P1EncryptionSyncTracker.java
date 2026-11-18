@@ -37,6 +37,7 @@ public class P25P1EncryptionSyncTracker
     private boolean mChangePending;
     private boolean mConfirmed;
     private int mConsecutiveEmptyCount;
+    private boolean mEmptyHeader;
 
     /**
      * Processes the encrypted state from a valid LDU2 encryption sync.
@@ -77,6 +78,27 @@ public class P25P1EncryptionSyncTracker
         }
 
         return false;
+    }
+
+    /**
+     * Processes an empty (all-zero) HDU.  It decodes as algorithm 0x00 but carries no information, so it is never
+     * evidence that the transmission is encrypted:
+     * - it doesn't establish the state, so the first LDU2 does,
+     * - it doesn't confirm or change an encrypted state, and
+     * - when the transmission is established as unencrypted it only marks a change as pending, so that the next LDU2
+     *   decides.  An HDU normally starts a new transmission and the terminator of the previous one may have been
+     *   missed.
+     *
+     * A transmission that has an empty HDU is excluded from {@link #isEmptySyncOnly()}.
+     */
+    public void processEmptyHeader()
+    {
+        mEmptyHeader = true;
+
+        if(mEstablished && !mEncrypted)
+        {
+            mChangePending = true;
+        }
     }
 
     /**
@@ -134,12 +156,12 @@ public class P25P1EncryptionSyncTracker
 
     /**
      * Indicates if the only encryption sync received for the current transmission is a single empty (all-zero) one,
-     * which hasn't established the state.  Systems that send an all-zero encryption sync with unencrypted audio
+     * which hasn't established the state, and the transmission didn't have an empty HDU.  Systems that send an all-zero encryption sync with unencrypted audio
      * produce this for a transmission that ends before a second LDU2.
      */
     public boolean isEmptySyncOnly()
     {
-        return !mEstablished && mConsecutiveEmptyCount > 0;
+        return !mEstablished && mConsecutiveEmptyCount > 0 && !mEmptyHeader;
     }
 
     /**
@@ -166,6 +188,7 @@ public class P25P1EncryptionSyncTracker
     {
         mConfirmed = false;
         mConsecutiveEmptyCount = 0;
+        mEmptyHeader = false;
         mEstablished = false;
         mEncrypted = false;
         mChangePending = false;
