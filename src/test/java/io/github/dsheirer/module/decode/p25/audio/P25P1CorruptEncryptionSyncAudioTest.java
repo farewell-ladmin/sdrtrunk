@@ -545,6 +545,27 @@ class P25P1CorruptEncryptionSyncAudioTest
     }
 
     @Test
+    void allZeroHduAndEmptySyncsAfterMissedTerminatorOfClearTransmissionPlay()
+    {
+        //A system that sends an all-zero HDU and all-zero encryption syncs with unencrypted audio, where the
+        //terminator of the previous clear transmission was missed.  Two consecutive empty syncs settle the change
+        //that the HDU left pending.
+        Rig rig = new Rig();
+        rig.send(rig.clearHdu(), rig.ldu1(), rig.clearLdu2(), rig.zeroHdu(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(),
+            rig.zeroLdu2(), rig.tdu());
+        assertEquals(6, rig.ldusPlayed());
+    }
+
+    @Test
+    void zeroFilledLdu2sSettleCorruptLdu2InClearTransmissionThatStartedWithAllZeroHdu()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.clearLdu2(), rig.ldu1(), rig.clearLdu2(), rig.ldu1(),
+            rig.encryptedLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.tdu());
+        assertEquals(10, rig.ldusPlayed(), "every LDU of the clear transmission is played");
+    }
+
+    @Test
     void allZeroHduDoesNotChangeAnEncryptedTransmission()
     {
         Rig rig = new Rig();

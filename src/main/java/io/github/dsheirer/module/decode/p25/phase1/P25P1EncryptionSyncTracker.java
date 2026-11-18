@@ -38,6 +38,7 @@ public class P25P1EncryptionSyncTracker
     private boolean mConfirmed;
     private int mConsecutiveEmptyCount;
     private boolean mEmptyHeader;
+    private boolean mEmptySyncBlocked;
 
     /**
      * Processes the encrypted state from a valid LDU2 encryption sync.
@@ -70,9 +71,10 @@ public class P25P1EncryptionSyncTracker
             return false;
         }
 
-        //After an empty HDU, empty encryption syncs are no evidence of an unencrypted transmission.  Only an LDU2
-        //with a non-empty encryption sync establishes the state or settles a pending change.
-        if(mEmptyHeader)
+        //After an empty HDU that arrived while the state wasn't established or a change was pending, empty encryption
+        //syncs are no evidence of an unencrypted transmission.  Only an LDU2 with a non-empty encryption sync
+        //establishes the state or settles the pending change.
+        if(mEmptySyncBlocked)
         {
             return false;
         }
@@ -96,11 +98,17 @@ public class P25P1EncryptionSyncTracker
      *   decides.  An HDU normally starts a new transmission and the terminator of the previous one may have been
      *   missed.
      *
-     * After an empty HDU, empty (all-zero) LDU2 encryption syncs don't count toward an unencrypted state for the rest of
-     * the transmission, and the transmission is excluded from {@link #isEmptySyncOnly()}.
+     * When the state isn't established or a change is already pending, empty (all-zero) LDU2 encryption syncs that
+     * follow the empty HDU don't count toward an unencrypted state until an LDU2 with a non-empty encryption sync is
+     * processed.  The transmission is excluded from {@link #isEmptySyncOnly()}.
      */
     public void processEmptyHeader()
     {
+        if(!mEstablished || mChangePending)
+        {
+            mEmptySyncBlocked = true;
+        }
+
         mEmptyHeader = true;
         mConsecutiveEmptyCount = 0;
 
@@ -118,6 +126,7 @@ public class P25P1EncryptionSyncTracker
     public boolean process(boolean encrypted)
     {
         mConsecutiveEmptyCount = 0;
+        mEmptySyncBlocked = false;
 
         if(!mEstablished)
         {
@@ -198,6 +207,7 @@ public class P25P1EncryptionSyncTracker
         mConfirmed = false;
         mConsecutiveEmptyCount = 0;
         mEmptyHeader = false;
+        mEmptySyncBlocked = false;
         mEstablished = false;
         mEncrypted = false;
         mChangePending = false;
