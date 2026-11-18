@@ -512,6 +512,39 @@ class P25P1CorruptEncryptionSyncAudioTest
     }
 
     @Test
+    void encryptedTransmissionWithAllZeroHduAndZeroFilledLdu2sIsNotPlayed()
+    {
+        //An all-zero HDU followed by any number of zero-filled LDU2s is no evidence of a clear transmission.
+        Rig rig = new Rig();
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(),
+            rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
+    }
+
+    @Test
+    void zeroFilledLdu2sAcrossAnAllZeroHduDoNotEstablishClear()
+    {
+        //A zero-filled LDU2 before the all-zero HDU and one after it aren't two consecutive ones.
+        Rig rig = new Rig();
+        rig.send(rig.ldu1(), rig.zeroLdu2(), rig.zeroHdu(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(),
+            rig.encryptedLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
+    }
+
+    @Test
+    void zeroFilledLdu2sDoNotSettlePendingChangeAfterAllZeroHdu()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.clearHdu(), rig.ldu1(), rig.clearLdu2());
+        assertEquals(2, rig.ldusPlayed());
+
+        //The terminator is missed and an encrypted transmission follows with an all-zero HDU and lost LDU2s.
+        rig.send(rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.zeroHdu(), rig.ldu1(),
+            rig.zeroLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.tdu());
+        assertEquals(3, rig.ldusPlayed(), "only the LDU1 before the first encrypted LDU2 is played");
+    }
+
+    @Test
     void allZeroHduDoesNotChangeAnEncryptedTransmission()
     {
         Rig rig = new Rig();

@@ -70,6 +70,13 @@ public class P25P1EncryptionSyncTracker
             return false;
         }
 
+        //After an empty HDU, empty encryption syncs are no evidence of an unencrypted transmission.  Only an LDU2
+        //with a non-empty encryption sync establishes the state or settles a pending change.
+        if(mEmptyHeader)
+        {
+            return false;
+        }
+
         mConsecutiveEmptyCount++;
 
         if(mConsecutiveEmptyCount >= 2)
@@ -89,11 +96,13 @@ public class P25P1EncryptionSyncTracker
      *   decides.  An HDU normally starts a new transmission and the terminator of the previous one may have been
      *   missed.
      *
-     * A transmission that has an empty HDU is excluded from {@link #isEmptySyncOnly()}.
+     * After an empty HDU, empty (all-zero) LDU2 encryption syncs don't count toward an unencrypted state for the rest of
+     * the transmission, and the transmission is excluded from {@link #isEmptySyncOnly()}.
      */
     public void processEmptyHeader()
     {
         mEmptyHeader = true;
+        mConsecutiveEmptyCount = 0;
 
         if(mEstablished && !mEncrypted)
         {

@@ -151,6 +151,17 @@ class P25P1EncryptionSyncTrackerTest
         tracker.processEmptyHeader();
         tracker.process(false, true);
         assertFalse(tracker.isEmptySyncOnly());
+        tracker.process(false, true);
+        tracker.process(false, true);
+        assertFalse(tracker.isEstablished(), "empty syncs after an empty header don't establish clear");
+
+        //An empty sync before the empty header doesn't count with one after it
+        tracker.reset();
+        tracker.process(false, true);
+        tracker.processEmptyHeader();
+        tracker.process(false, true);
+        assertFalse(tracker.isEstablished());
+
         tracker.reset();
         tracker.process(false, true);
         assertTrue(tracker.isEmptySyncOnly());
