@@ -301,6 +301,19 @@ class P25P1AllZeroHduAudioTest
     }
 
     @Test
+    void lateEntryTransmissionsAreUnchanged()
+    {
+        //Without an all-zero HDU the first valid LDU2 establishes the state, including an all-zero encryption sync,
+        //which is treated as unencrypted.
+        Rig rig = new Rig();
+        rig.send(rig.ldu1(), rig.clearLdu2(), rig.ldu1(), rig.clearLdu2(), rig.tdu());
+        assertEquals(4, rig.ldusPlayed());
+
+        rig.send(rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.zeroLdu2(), rig.tdu());
+        assertEquals(8, rig.ldusPlayed());
+    }
+
+    @Test
     void encryptedTransmissionIsNotPlayed()
     {
         Rig rig = new Rig();
