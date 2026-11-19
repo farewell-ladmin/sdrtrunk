@@ -39,7 +39,6 @@ import io.github.dsheirer.module.decode.p25.phase1.message.lc.LinkControlWord;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.EncryptionSyncParameters;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU1Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU2Message;
-import io.github.dsheirer.module.decode.p25.phase1.message.tdu.TDULCMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.tdu.TDUMessage;
 import io.github.dsheirer.preference.UserPreferences;
 import java.lang.reflect.Proxy;
@@ -242,21 +241,6 @@ class P25P1AllZeroHduAudioTest
                 public EncryptionSyncParameters getEncryptionSyncParameters()
                 {
                     return mParameters;
-                }
-            };
-        }
-
-        /**
-         * A TDULC whose link control word failed error correction.  The decoder state ignores it.
-         */
-        TDULCMessage invalidTdulc()
-        {
-            return new TDULCMessage(zero(P25P1DataUnitID.TERMINATOR_DATA_UNIT_LINK_CONTROL), NAC, timestamp())
-            {
-                @Override
-                public LinkControlWord getLinkControlWord()
-                {
-                    return null;
                 }
             };
         }
