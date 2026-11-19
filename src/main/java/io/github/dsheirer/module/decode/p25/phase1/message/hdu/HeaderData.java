@@ -149,6 +149,16 @@ public class HeaderData
         return getEncryption() != Encryption.UNENCRYPTED;
     }
 
+    /**
+     * Indicates if the message indicator, vendor, algorithm, key and talkgroup are all zeros.  The all-zero header is
+     * a valid codeword that passes error correction and decodes as talkgroup 0 and algorithm 0x00, but it carries no
+     * information about the transmission and it isn't evidence that the audio is encrypted.
+     */
+    public boolean isEmpty()
+    {
+        return getMessage().nextSetBit(0) < 0;
+    }
+
     public TalkgroupIdentifier getTalkgroup()
     {
         if(mTalkgroup == null)

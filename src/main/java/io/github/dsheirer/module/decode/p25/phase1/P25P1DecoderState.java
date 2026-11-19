@@ -845,6 +845,14 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
             if(headerData.isValid())
             {
+                //The all-zero HDU passes error correction and decodes as talkgroup 0 and algorithm 0x00.  It carries
+                //no information, so it doesn't start a call and isn't evidence that the transmission is encrypted.
+                if(headerData.isEmpty())
+                {
+                    LOGGER.info("P25P1 [{}] ignored all-zero HDU: {}", getCurrentFrequency(), message);
+                    return;
+                }
+
                 Identifier talkgroup = headerData.getTalkgroup();
 
                 //Run the talkgroup through the patch group manager so we don't get a plain talkgroup in addition to the patch

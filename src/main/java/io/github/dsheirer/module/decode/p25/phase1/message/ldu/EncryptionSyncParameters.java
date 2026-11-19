@@ -150,6 +150,16 @@ public class EncryptionSyncParameters implements IEncryptionSyncParameters
     }
 
     /**
+     * Indicates if the algorithm, key and message indicator are all zeros.  This is treated as unencrypted, but it is
+     * also what a zero-filled LDU2 that was substituted for a lost one contains.
+     */
+    public boolean isEmpty()
+    {
+        return getMessage().getInt(ALGORITHM_ID) == 0 && getMessage().getInt(KEY_ID) == 0 &&
+                getMessageIndicator().contains(EMPTY_MESSAGE_INDICATOR);
+    }
+
+    /**
      * Indicates if the audio stream is encrypted
      */
     public boolean isEncryptedAudio()
