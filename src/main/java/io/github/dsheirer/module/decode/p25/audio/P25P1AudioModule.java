@@ -81,7 +81,20 @@ public class P25P1AudioModule extends ImbeAudioModule
     {
         if(hasAudioCodec())
         {
-            if(mEncryptedCallStateEstablished)
+            if(message instanceof HDUMessage hdu && hdu.isValid() && hdu.getHeaderData().isEmpty())
+            {
+                //The all-zero HDU passes error correction and decodes as algorithm 0x00, but it carries no
+                //information.  It can be the start of a new transmission after a missed terminator, so an
+                //unencrypted state from the previous transmission isn't kept: the next LDU2 establishes the state.
+                //An encrypted state is kept.
+                if(!(mEncryptedCallStateEstablished && mEncryptedCall))
+                {
+                    mEncryptedCallStateEstablished = false;
+                    mEmptyHeader = true;
+                    mCachedLDUMessages.clear();
+                }
+            }
+            else if(mEncryptedCallStateEstablished)
             {
                 if(message instanceof LDUMessage ldu)
                 {
@@ -92,17 +105,8 @@ public class P25P1AudioModule extends ImbeAudioModule
             {
                 if(message instanceof HDUMessage hdu && hdu.isValid())
                 {
-                    if(hdu.getHeaderData().isEmpty())
-                    {
-                        //The all-zero HDU passes error correction and decodes as algorithm 0x00, but it carries no
-                        //information.  Leave the encrypted call state for the first LDU2 to establish.
-                        mEmptyHeader = true;
-                    }
-                    else
-                    {
-                        mEncryptedCallStateEstablished = true;
-                        mEncryptedCall = hdu.getHeaderData().isEncryptedAudio();
-                    }
+                    mEncryptedCallStateEstablished = true;
+                    mEncryptedCall = hdu.getHeaderData().isEncryptedAudio();
                 }
                 else if(message instanceof LDU1Message ldu1)
                 {

@@ -352,6 +352,29 @@ class P25P1AllZeroHduAudioTest
     }
 
     @Test
+    void encryptedTransmissionWithAllZeroHduAfterMissedTerminatorIsNotPlayed()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.clearHdu(), rig.ldu1(), rig.clearLdu2());
+        assertEquals(2, rig.ldusPlayed());
+
+        //The terminator of the clear transmission is missed.  The all-zero HDU drops the unencrypted state, so the
+        //encrypted transmission that follows isn't played while its LDU2s are lost.
+        rig.send(rig.zeroHdu(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(), rig.encryptedLdu2(), rig.ldu1(),
+            rig.encryptedLdu2(), rig.tdu());
+        assertEquals(2, rig.ldusPlayed(), "no LDU of the encrypted transmission is played");
+    }
+
+    @Test
+    void allZeroHduDoesNotChangeAnEncryptedTransmission()
+    {
+        Rig rig = new Rig();
+        rig.send(rig.encryptedHdu(), rig.ldu1(), rig.zeroHdu(), rig.ldu1(), rig.zeroLdu2(), rig.ldu1(),
+            rig.encryptedLdu2(), rig.tdu());
+        assertEquals(0, rig.ldusPlayed());
+    }
+
+    @Test
     void allZeroHduInTheMiddleOfClearTransmissionDoesNotMuteIt()
     {
         Rig rig = new Rig();

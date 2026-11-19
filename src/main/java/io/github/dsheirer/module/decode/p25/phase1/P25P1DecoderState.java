@@ -850,6 +850,14 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 if(headerData.isEmpty())
                 {
                     LOGGER.info("P25P1 [{}] ignored all-zero HDU: {}", getCurrentFrequency(), message);
+
+                    //It can be the start of a new transmission after a missed terminator, so an unencrypted state
+                    //from the previous transmission isn't kept.
+                    if(Boolean.FALSE.equals(mCallEncryptedByAlgorithm))
+                    {
+                        mCallEncryptedByAlgorithm = null;
+                    }
+
                     return;
                 }
 
