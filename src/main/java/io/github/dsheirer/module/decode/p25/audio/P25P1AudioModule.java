@@ -37,6 +37,7 @@ public class P25P1AudioModule extends ImbeAudioModule
 {
     private boolean mEncryptedCall = false;
     private boolean mEncryptedCallStateEstablished = false;
+    private boolean mEmptyHeader = false;
 
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private List<LDUMessage> mCachedLDUMessages = new ArrayList<>();
@@ -80,7 +81,20 @@ public class P25P1AudioModule extends ImbeAudioModule
     {
         if(hasAudioCodec())
         {
-            if(mEncryptedCallStateEstablished)
+            if(message instanceof HDUMessage hdu && hdu.isValid() && hdu.getHeaderData().isEmpty())
+            {
+                //The all-zero HDU passes error correction and decodes as algorithm 0x00, but it carries no
+                //information.  It can be the start of a new transmission after a missed terminator, so an
+                //unencrypted state from the previous transmission isn't kept: the next LDU2 establishes the state.
+                //An encrypted state is kept.
+                if(!(mEncryptedCallStateEstablished && mEncryptedCall))
+                {
+                    mEncryptedCallStateEstablished = false;
+                    mEmptyHeader = true;
+                    mCachedLDUMessages.clear();
+                }
+            }
+            else if(mEncryptedCallStateEstablished)
             {
                 if(message instanceof LDUMessage ldu)
                 {
@@ -102,7 +116,10 @@ public class P25P1AudioModule extends ImbeAudioModule
                 }
                 else if(message instanceof LDU2Message ldu2)
                 {
-                    if(ldu2.getEncryptionSyncParameters().isValid())
+                    //After an all-zero HDU, an all-zero encryption sync doesn't establish the state.  It is treated as
+                    //unencrypted, but a zero-filled LDU2 that was substituted for a lost one also contains it.
+                    if(ldu2.getEncryptionSyncParameters().isValid() &&
+                        !(mEmptyHeader && ldu2.getEncryptionSyncParameters().isEmpty()))
                     {
                         mEncryptedCallStateEstablished = true;
                         mEncryptedCall = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
@@ -160,6 +177,7 @@ public class P25P1AudioModule extends ImbeAudioModule
                 closeAudioSegment();
                 mEncryptedCallStateEstablished = false;
                 mEncryptedCall = false;
+                mEmptyHeader = false;
                 mCachedLDUMessages.clear();
             }
         }
